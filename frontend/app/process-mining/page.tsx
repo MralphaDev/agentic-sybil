@@ -73,52 +73,45 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
     });
     const startNames = Object.keys(starts).filter((name) => names.has(name));
     const endNames = Object.keys(ends).filter((name) => names.has(name));
-    const roots = startNames.length ? startNames : [...names].filter((name) => !edges.some((edge) => edge.target === name));
-    const sinks = endNames.length ? endNames : [...names].filter((name) => !edges.some((edge) => edge.source === name));
-    const rank = new Map<string, number>();
-    const adjacency = new Map<string, string[]>();
-    names.forEach((name) => adjacency.set(name, []));
-    edges.forEach((edge) => adjacency.get(edge.source)?.push(edge.target));
-    const seedQueue = [...roots];
-    roots.forEach((name) => rank.set(name, 1));
-    // BFS assigns each activity its shortest forward rank, so loops never push
-    // the graph into an enormous number of columns.
-    const assignRanks = (queue: string[]) => {
-      while (queue.length) {
-        const current = queue.shift()!;
-        for (const target of adjacency.get(current) ?? []) {
-          if (!rank.has(target)) { rank.set(target, (rank.get(current) ?? 1) + 1); queue.push(target); }
-        }
-      }
-    };
-    assignRanks(seedQueue);
-    // Include disconnected cyclic components that cannot be reached from START.
-    for (const name of names) if (!rank.has(name)) { rank.set(name, 1); assignRanks([name]); }
-    const maxRank = Math.max(2, ...rank.values());
-    const columns = new Map<number, string[]>();
-    for (const name of names) {
-      const col = Math.max(1, Math.min(maxRank, rank.get(name) ?? 1));
-      if (!columns.has(col)) columns.set(col, []);
-      columns.get(col)!.push(name);
-    }
-    for (const col of columns.values()) col.sort((a, b) =>
-      (activityStats.get(b)!.incoming + activityStats.get(b)!.outgoing) -
-      (activityStats.get(a)!.incoming + activityStats.get(a)!.outgoing) || a.localeCompare(b)
-    );
-    const positions = new Map<string, { x: number; y: number }>();
-    const xGap = 300, yGap = 150;
-    for (const [col, values] of columns) values.forEach((name, index) => positions.set(name, {
-      x: col * xGap, y: (index - (values.length - 1) / 2) * yGap,
+    const layoutGraph = new dagre.graphlib.Graph({ multigraph: true, compound: false });
+    layoutGraph.setDefaultEdgeLabel(() => ({}));
+    layoutGraph.setGraph({
+      rankdir: "LR",
+      ranker: "network-simplex",
+      acyclicer: "greedy",
+      nodesep: 44,
+      ranksep: 115,
+      edgesep: 24,
+      marginx: 36,
+      marginy: 36,
+    });
+    const activityWidth = 206, activityHeight = 88, specialSize = 66;
+    layoutGraph.setNode("__START__", { width: specialSize, height: specialSize });
+    layoutGraph.setNode("__END__", { width: specialSize, height: specialSize });
+    names.forEach((name) => layoutGraph.setNode(name, {
+      width: activityWidth,
+      height: activityStats.get(name)!.rework > 0 ? activityHeight + 24 : activityHeight,
     }));
-    const startY = roots.length ? roots.reduce((sum, name) => sum + (positions.get(name)?.y ?? 0), 0) / roots.length : 0;
-    const endY = sinks.length ? sinks.reduce((sum, name) => sum + (positions.get(name)?.y ?? 0), 0) / sinks.length : 0;
+    // Dagre computes a layered layout and handles cycles and reciprocal edges,
+    // unlike assigning every activity its first BFS distance from a root.
+    edges.forEach((edge, index) => layoutGraph.setEdge(edge.source, edge.target, {}, `activity-${index}`));
+    startNames.forEach((name, index) => layoutGraph.setEdge("__START__", name, {}, `start-${index}`));
+    endNames.forEach((name, index) => layoutGraph.setEdge(name, "__END__", {}, `end-${index}`));
+    dagre.layout(layoutGraph);
+    const positions = new Map<string, { x: number; y: number }>();
+    for (const name of ["__START__", ...names, "__END__"]) {
+      const point = layoutGraph.node(name);
+      const width = name === "__START__" || name === "__END__" ? specialSize : activityWidth;
+      const height = name === "__START__" || name === "__END__" ? specialSize : activityStats.get(name)!.rework > 0 ? activityHeight + 24 : activityHeight;
+      positions.set(name, { x: point.x - width / 2, y: point.y - height / 2 });
+    }
     const nodes: Node[] = [
-      { id: "__START__", type: "activity", position: { x: 0, y: startY - 33 }, data: { title: "START", incoming: 0, outgoing: Object.values(starts).reduce((sum, n) => sum + (number(n) ?? 0), 0), start: 0, end: 0, special: "start" } },
+      { id: "__START__", type: "activity", position: positions.get("__START__")!, data: { title: "START", incoming: 0, outgoing: Object.values(starts).reduce((sum, n) => sum + (number(n) ?? 0), 0), start: 0, end: 0, special: "start" } },
       ...[...names].map((name) => {
-        const point = positions.get(name) ?? { x: xGap, y: 0 }, stats = activityStats.get(name)!;
-        return { id: name, type: "activity", position: { x: point.x, y: point.y - 41 }, data: { title: name, incoming: stats.incoming, outgoing: stats.outgoing, start: number(starts[name]) ?? 0, end: number(ends[name]) ?? 0, rework: stats.rework } };
+        const stats = activityStats.get(name)!;
+        return { id: name, type: "activity", position: positions.get(name)!, data: { title: name, incoming: stats.incoming, outgoing: stats.outgoing, start: number(starts[name]) ?? 0, end: number(ends[name]) ?? 0, rework: stats.rework } };
       }),
-      { id: "__END__", type: "activity", position: { x: (maxRank + 1) * xGap, y: endY - 33 }, data: { title: "END", incoming: Object.values(ends).reduce((sum, n) => sum + (number(n) ?? 0), 0), outgoing: 0, start: 0, end: 0, special: "end" } },
+      { id: "__END__", type: "activity", position: positions.get("__END__")!, data: { title: "END", incoming: Object.values(ends).reduce((sum, n) => sum + (number(n) ?? 0), 0), outgoing: 0, start: 0, end: 0, special: "end" } },
     ];
     const maxCount = Math.max(1, ...edges.map((item) => item.count), ...Object.values(starts).map((v) => number(v) ?? 0), ...Object.values(ends).map((v) => number(v) ?? 0));
     const flowEdges: FlowEdge[] = [
