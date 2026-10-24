@@ -655,6 +655,20 @@
       "transfer": 8,
       "sell": 1,
       "create_account": 1
+    },
+    "filtering_statistics": {
+      "original_edge_count": 127,
+      "filtered_edge_count": 23,
+      "min_edge_count": 5,
+      "excluded_activities": [
+        "create_account",
+        "create_token_account",
+        "receive_non_target_token",
+        "swap",
+        "transfer",
+        "transfer_non_target_token",
+        "unknown"
+      ]
     }
   },
   "stochastic_dfg": {
@@ -1568,40 +1582,1271 @@
       "sell": 1,
       "create_account": 1
     },
+    "filtered_dfg": {
+      "edges": [
+        {
+          "source": "buy",
+          "target": "buy",
+          "count": 231
+        },
+        {
+          "source": "buy",
+          "target": "receive_native",
+          "count": 9
+        },
+        {
+          "source": "buy",
+          "target": "sell",
+          "count": 23
+        },
+        {
+          "source": "buy",
+          "target": "transfer_target_token",
+          "count": 6
+        },
+        {
+          "source": "receive_native",
+          "target": "buy",
+          "count": 9
+        },
+        {
+          "source": "receive_native",
+          "target": "receive_native",
+          "count": 684
+        },
+        {
+          "source": "receive_native",
+          "target": "sell",
+          "count": 20
+        },
+        {
+          "source": "receive_native",
+          "target": "transfer_native",
+          "count": 395
+        },
+        {
+          "source": "receive_native",
+          "target": "transfer_target_token",
+          "count": 34
+        },
+        {
+          "source": "receive_target_token",
+          "target": "sell",
+          "count": 8
+        },
+        {
+          "source": "receive_target_token",
+          "target": "transfer_target_token",
+          "count": 61
+        },
+        {
+          "source": "sell",
+          "target": "buy",
+          "count": 20
+        },
+        {
+          "source": "sell",
+          "target": "sell",
+          "count": 1599
+        },
+        {
+          "source": "sell",
+          "target": "transfer_native",
+          "count": 81
+        },
+        {
+          "source": "sell",
+          "target": "transfer_target_token",
+          "count": 12
+        },
+        {
+          "source": "transfer_native",
+          "target": "receive_native",
+          "count": 198
+        },
+        {
+          "source": "transfer_native",
+          "target": "sell",
+          "count": 19
+        },
+        {
+          "source": "transfer_native",
+          "target": "transfer_native",
+          "count": 348
+        },
+        {
+          "source": "transfer_native",
+          "target": "transfer_target_token",
+          "count": 6
+        },
+        {
+          "source": "transfer_target_token",
+          "target": "receive_target_token",
+          "count": 61
+        },
+        {
+          "source": "transfer_target_token",
+          "target": "sell",
+          "count": 39
+        },
+        {
+          "source": "transfer_target_token",
+          "target": "transfer_native",
+          "count": 29
+        },
+        {
+          "source": "transfer_target_token",
+          "target": "transfer_target_token",
+          "count": 62
+        }
+      ],
+      "start_activities": {
+        "receive_native": 451,
+        "receive_target_token": 2
+      },
+      "end_activities": {
+        "transfer_native": 303,
+        "transfer_target_token": 63,
+        "receive_native": 13,
+        "sell": 1
+      }
+    },
+    "filtering_statistics": {
+      "original_edge_count": 127,
+      "filtered_edge_count": 23,
+      "min_edge_count": 5,
+      "excluded_activities": [
+        "create_account",
+        "create_token_account",
+        "receive_non_target_token",
+        "swap",
+        "transfer",
+        "transfer_non_target_token",
+        "unknown"
+      ]
+    },
     "type": "stochastic_dfg",
     "probability_definition": "P(target | source) = edge count / total outgoing edge count from source"
+  },
+  "filtered_dfg": {
+    "edges": [
+      {
+        "source": "buy",
+        "target": "buy",
+        "count": 231,
+        "outgoing_transition_count": 269,
+        "transition_probability": 0.858736
+      },
+      {
+        "source": "buy",
+        "target": "receive_native",
+        "count": 9,
+        "outgoing_transition_count": 269,
+        "transition_probability": 0.033457
+      },
+      {
+        "source": "buy",
+        "target": "sell",
+        "count": 23,
+        "outgoing_transition_count": 269,
+        "transition_probability": 0.085502
+      },
+      {
+        "source": "buy",
+        "target": "transfer_target_token",
+        "count": 6,
+        "outgoing_transition_count": 269,
+        "transition_probability": 0.022305
+      },
+      {
+        "source": "receive_native",
+        "target": "buy",
+        "count": 9,
+        "outgoing_transition_count": 1142,
+        "transition_probability": 0.007881
+      },
+      {
+        "source": "receive_native",
+        "target": "receive_native",
+        "count": 684,
+        "outgoing_transition_count": 1142,
+        "transition_probability": 0.598949
+      },
+      {
+        "source": "receive_native",
+        "target": "sell",
+        "count": 20,
+        "outgoing_transition_count": 1142,
+        "transition_probability": 0.017513
+      },
+      {
+        "source": "receive_native",
+        "target": "transfer_native",
+        "count": 395,
+        "outgoing_transition_count": 1142,
+        "transition_probability": 0.345884
+      },
+      {
+        "source": "receive_native",
+        "target": "transfer_target_token",
+        "count": 34,
+        "outgoing_transition_count": 1142,
+        "transition_probability": 0.029772
+      },
+      {
+        "source": "receive_target_token",
+        "target": "sell",
+        "count": 8,
+        "outgoing_transition_count": 69,
+        "transition_probability": 0.115942
+      },
+      {
+        "source": "receive_target_token",
+        "target": "transfer_target_token",
+        "count": 61,
+        "outgoing_transition_count": 69,
+        "transition_probability": 0.884058
+      },
+      {
+        "source": "sell",
+        "target": "buy",
+        "count": 20,
+        "outgoing_transition_count": 1712,
+        "transition_probability": 0.011682
+      },
+      {
+        "source": "sell",
+        "target": "sell",
+        "count": 1599,
+        "outgoing_transition_count": 1712,
+        "transition_probability": 0.933995
+      },
+      {
+        "source": "sell",
+        "target": "transfer_native",
+        "count": 81,
+        "outgoing_transition_count": 1712,
+        "transition_probability": 0.047313
+      },
+      {
+        "source": "sell",
+        "target": "transfer_target_token",
+        "count": 12,
+        "outgoing_transition_count": 1712,
+        "transition_probability": 0.007009
+      },
+      {
+        "source": "transfer_native",
+        "target": "receive_native",
+        "count": 198,
+        "outgoing_transition_count": 571,
+        "transition_probability": 0.34676
+      },
+      {
+        "source": "transfer_native",
+        "target": "sell",
+        "count": 19,
+        "outgoing_transition_count": 571,
+        "transition_probability": 0.033275
+      },
+      {
+        "source": "transfer_native",
+        "target": "transfer_native",
+        "count": 348,
+        "outgoing_transition_count": 571,
+        "transition_probability": 0.609457
+      },
+      {
+        "source": "transfer_native",
+        "target": "transfer_target_token",
+        "count": 6,
+        "outgoing_transition_count": 571,
+        "transition_probability": 0.010508
+      },
+      {
+        "source": "transfer_target_token",
+        "target": "receive_target_token",
+        "count": 61,
+        "outgoing_transition_count": 191,
+        "transition_probability": 0.319372
+      },
+      {
+        "source": "transfer_target_token",
+        "target": "sell",
+        "count": 39,
+        "outgoing_transition_count": 191,
+        "transition_probability": 0.204188
+      },
+      {
+        "source": "transfer_target_token",
+        "target": "transfer_native",
+        "count": 29,
+        "outgoing_transition_count": 191,
+        "transition_probability": 0.151832
+      },
+      {
+        "source": "transfer_target_token",
+        "target": "transfer_target_token",
+        "count": 62,
+        "outgoing_transition_count": 191,
+        "transition_probability": 0.324607
+      }
+    ],
+    "start_activities": {
+      "receive_native": 451,
+      "receive_target_token": 2
+    },
+    "end_activities": {
+      "transfer_native": 303,
+      "transfer_target_token": 63,
+      "receive_native": 13,
+      "sell": 1
+    },
+    "type": "stochastic_dfg",
+    "probability_definition": "P(target | source) = edge count / total outgoing edge count from source"
+  },
+  "action_counts": {
+    "swap": 7388,
+    "sell": 1852,
+    "receive_native": 1688,
+    "transfer_native": 1308,
+    "receive_non_target_token": 585,
+    "buy": 433,
+    "unknown": 377,
+    "transfer_non_target_token": 339,
+    "transfer_target_token": 287,
+    "receive_target_token": 79,
+    "create_account": 77,
+    "create_token_account": 73,
+    "transfer": 52
   },
   "first_activity_concentration": {
     "wallet_count": 467,
     "four_hour_distribution": {
-      "2025-09-06T12:00:00+00:00": 1,
-      "2025-09-11T00:00:00+00:00": 1,
-      "2025-09-12T12:00:00+00:00": 2,
+      "2025-09-12T12:00:00+00:00": 1,
+      "2025-09-12T16:00:00+00:00": 0,
+      "2025-09-12T20:00:00+00:00": 0,
+      "2025-09-13T00:00:00+00:00": 0,
+      "2025-09-13T04:00:00+00:00": 0,
+      "2025-09-13T08:00:00+00:00": 0,
+      "2025-09-13T12:00:00+00:00": 0,
       "2025-09-13T16:00:00+00:00": 10,
+      "2025-09-13T20:00:00+00:00": 0,
+      "2025-09-14T00:00:00+00:00": 0,
       "2025-09-14T04:00:00+00:00": 10,
+      "2025-09-14T08:00:00+00:00": 0,
       "2025-09-14T12:00:00+00:00": 5,
       "2025-09-14T16:00:00+00:00": 5,
+      "2025-09-14T20:00:00+00:00": 0,
       "2025-09-15T00:00:00+00:00": 10,
+      "2025-09-15T04:00:00+00:00": 0,
       "2025-09-15T08:00:00+00:00": 56,
       "2025-09-15T12:00:00+00:00": 4,
       "2025-09-15T16:00:00+00:00": 1,
+      "2025-09-15T20:00:00+00:00": 0,
+      "2025-09-16T00:00:00+00:00": 0,
+      "2025-09-16T04:00:00+00:00": 0,
       "2025-09-16T08:00:00+00:00": 100,
+      "2025-09-16T12:00:00+00:00": 0,
+      "2025-09-16T16:00:00+00:00": 0,
+      "2025-09-16T20:00:00+00:00": 0,
+      "2025-09-17T00:00:00+00:00": 0,
+      "2025-09-17T04:00:00+00:00": 0,
+      "2025-09-17T08:00:00+00:00": 0,
+      "2025-09-17T12:00:00+00:00": 0,
+      "2025-09-17T16:00:00+00:00": 0,
+      "2025-09-17T20:00:00+00:00": 0,
+      "2025-09-18T00:00:00+00:00": 0,
+      "2025-09-18T04:00:00+00:00": 0,
+      "2025-09-18T08:00:00+00:00": 0,
+      "2025-09-18T12:00:00+00:00": 0,
+      "2025-09-18T16:00:00+00:00": 0,
+      "2025-09-18T20:00:00+00:00": 0,
+      "2025-09-19T00:00:00+00:00": 0,
+      "2025-09-19T04:00:00+00:00": 0,
+      "2025-09-19T08:00:00+00:00": 0,
+      "2025-09-19T12:00:00+00:00": 0,
+      "2025-09-19T16:00:00+00:00": 0,
+      "2025-09-19T20:00:00+00:00": 0,
+      "2025-09-20T00:00:00+00:00": 0,
+      "2025-09-20T04:00:00+00:00": 0,
+      "2025-09-20T08:00:00+00:00": 0,
+      "2025-09-20T12:00:00+00:00": 0,
+      "2025-09-20T16:00:00+00:00": 0,
+      "2025-09-20T20:00:00+00:00": 0,
+      "2025-09-21T00:00:00+00:00": 0,
+      "2025-09-21T04:00:00+00:00": 0,
+      "2025-09-21T08:00:00+00:00": 0,
+      "2025-09-21T12:00:00+00:00": 0,
+      "2025-09-21T16:00:00+00:00": 0,
+      "2025-09-21T20:00:00+00:00": 0,
+      "2025-09-22T00:00:00+00:00": 0,
+      "2025-09-22T04:00:00+00:00": 0,
+      "2025-09-22T08:00:00+00:00": 0,
+      "2025-09-22T12:00:00+00:00": 0,
+      "2025-09-22T16:00:00+00:00": 0,
+      "2025-09-22T20:00:00+00:00": 0,
+      "2025-09-23T00:00:00+00:00": 0,
+      "2025-09-23T04:00:00+00:00": 0,
+      "2025-09-23T08:00:00+00:00": 0,
+      "2025-09-23T12:00:00+00:00": 0,
+      "2025-09-23T16:00:00+00:00": 0,
+      "2025-09-23T20:00:00+00:00": 0,
+      "2025-09-24T00:00:00+00:00": 0,
+      "2025-09-24T04:00:00+00:00": 0,
       "2025-09-24T08:00:00+00:00": 199,
+      "2025-09-24T12:00:00+00:00": 0,
+      "2025-09-24T16:00:00+00:00": 0,
+      "2025-09-24T20:00:00+00:00": 0,
+      "2025-09-25T00:00:00+00:00": 0,
+      "2025-09-25T04:00:00+00:00": 0,
+      "2025-09-25T08:00:00+00:00": 0,
+      "2025-09-25T12:00:00+00:00": 0,
+      "2025-09-25T16:00:00+00:00": 0,
+      "2025-09-25T20:00:00+00:00": 0,
+      "2025-09-26T00:00:00+00:00": 0,
+      "2025-09-26T04:00:00+00:00": 0,
+      "2025-09-26T08:00:00+00:00": 0,
+      "2025-09-26T12:00:00+00:00": 0,
+      "2025-09-26T16:00:00+00:00": 0,
+      "2025-09-26T20:00:00+00:00": 0,
+      "2025-09-27T00:00:00+00:00": 0,
+      "2025-09-27T04:00:00+00:00": 0,
+      "2025-09-27T08:00:00+00:00": 0,
+      "2025-09-27T12:00:00+00:00": 0,
+      "2025-09-27T16:00:00+00:00": 0,
+      "2025-09-27T20:00:00+00:00": 0,
+      "2025-09-28T00:00:00+00:00": 0,
+      "2025-09-28T04:00:00+00:00": 0,
+      "2025-09-28T08:00:00+00:00": 0,
+      "2025-09-28T12:00:00+00:00": 0,
+      "2025-09-28T16:00:00+00:00": 0,
+      "2025-09-28T20:00:00+00:00": 0,
+      "2025-09-29T00:00:00+00:00": 0,
+      "2025-09-29T04:00:00+00:00": 0,
+      "2025-09-29T08:00:00+00:00": 0,
+      "2025-09-29T12:00:00+00:00": 0,
+      "2025-09-29T16:00:00+00:00": 0,
+      "2025-09-29T20:00:00+00:00": 0,
+      "2025-09-30T00:00:00+00:00": 0,
+      "2025-09-30T04:00:00+00:00": 0,
+      "2025-09-30T08:00:00+00:00": 0,
       "2025-09-30T12:00:00+00:00": 1,
       "2025-09-30T16:00:00+00:00": 1,
+      "2025-09-30T20:00:00+00:00": 0,
+      "2025-10-01T00:00:00+00:00": 0,
+      "2025-10-01T04:00:00+00:00": 0,
+      "2025-10-01T08:00:00+00:00": 0,
+      "2025-10-01T12:00:00+00:00": 0,
+      "2025-10-01T16:00:00+00:00": 0,
+      "2025-10-01T20:00:00+00:00": 0,
+      "2025-10-02T00:00:00+00:00": 0,
+      "2025-10-02T04:00:00+00:00": 0,
       "2025-10-02T08:00:00+00:00": 1,
       "2025-10-02T12:00:00+00:00": 1,
-      "2025-10-02T16:00:00+00:00": 3
+      "2025-10-02T16:00:00+00:00": 3,
+      "2025-10-02T20:00:00+00:00": 0,
+      "2025-10-03T00:00:00+00:00": 0,
+      "2025-10-03T04:00:00+00:00": 0,
+      "2025-10-03T08:00:00+00:00": 0,
+      "2025-10-03T12:00:00+00:00": 0,
+      "2025-10-03T16:00:00+00:00": 0,
+      "2025-10-03T20:00:00+00:00": 0,
+      "2025-10-04T00:00:00+00:00": 0,
+      "2025-10-04T04:00:00+00:00": 0,
+      "2025-10-04T08:00:00+00:00": 0,
+      "2025-10-04T12:00:00+00:00": 0,
+      "2025-10-04T16:00:00+00:00": 0,
+      "2025-10-04T20:00:00+00:00": 0,
+      "2025-10-05T00:00:00+00:00": 0,
+      "2025-10-05T04:00:00+00:00": 0,
+      "2025-10-05T08:00:00+00:00": 0,
+      "2025-10-05T12:00:00+00:00": 0,
+      "2025-10-05T16:00:00+00:00": 0,
+      "2025-10-05T20:00:00+00:00": 0,
+      "2025-10-06T00:00:00+00:00": 0,
+      "2025-10-06T04:00:00+00:00": 0,
+      "2025-10-06T08:00:00+00:00": 0,
+      "2025-10-06T12:00:00+00:00": 0,
+      "2025-10-06T16:00:00+00:00": 0,
+      "2025-10-06T20:00:00+00:00": 0,
+      "2025-10-07T00:00:00+00:00": 0,
+      "2025-10-07T04:00:00+00:00": 0,
+      "2025-10-07T08:00:00+00:00": 0,
+      "2025-10-07T12:00:00+00:00": 0,
+      "2025-10-07T16:00:00+00:00": 0,
+      "2025-10-07T20:00:00+00:00": 0,
+      "2025-10-08T00:00:00+00:00": 0,
+      "2025-10-08T04:00:00+00:00": 0,
+      "2025-10-08T08:00:00+00:00": 0,
+      "2025-10-08T12:00:00+00:00": 0,
+      "2025-10-08T16:00:00+00:00": 0,
+      "2025-10-08T20:00:00+00:00": 0,
+      "2025-10-09T00:00:00+00:00": 0,
+      "2025-10-09T04:00:00+00:00": 0,
+      "2025-10-09T08:00:00+00:00": 0,
+      "2025-10-09T12:00:00+00:00": 0,
+      "2025-10-09T16:00:00+00:00": 0,
+      "2025-10-09T20:00:00+00:00": 0,
+      "2025-10-10T00:00:00+00:00": 0,
+      "2025-10-10T04:00:00+00:00": 0,
+      "2025-10-10T08:00:00+00:00": 0,
+      "2025-10-10T12:00:00+00:00": 0,
+      "2025-10-10T16:00:00+00:00": 0,
+      "2025-10-10T20:00:00+00:00": 0,
+      "2025-10-11T00:00:00+00:00": 0,
+      "2025-10-11T04:00:00+00:00": 0,
+      "2025-10-11T08:00:00+00:00": 0,
+      "2025-10-11T12:00:00+00:00": 0,
+      "2025-10-11T16:00:00+00:00": 0,
+      "2025-10-11T20:00:00+00:00": 0,
+      "2025-10-12T00:00:00+00:00": 0,
+      "2025-10-12T04:00:00+00:00": 0,
+      "2025-10-12T08:00:00+00:00": 0,
+      "2025-10-12T12:00:00+00:00": 0
     },
+    "four_hour_buckets": [
+      {
+        "timestamp": "2025-09-12T12:00:00+00:00",
+        "count": 1
+      },
+      {
+        "timestamp": "2025-09-12T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-12T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-13T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-13T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-13T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-13T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-13T16:00:00+00:00",
+        "count": 10
+      },
+      {
+        "timestamp": "2025-09-13T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-14T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-14T04:00:00+00:00",
+        "count": 10
+      },
+      {
+        "timestamp": "2025-09-14T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-14T12:00:00+00:00",
+        "count": 5
+      },
+      {
+        "timestamp": "2025-09-14T16:00:00+00:00",
+        "count": 5
+      },
+      {
+        "timestamp": "2025-09-14T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-15T00:00:00+00:00",
+        "count": 10
+      },
+      {
+        "timestamp": "2025-09-15T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-15T08:00:00+00:00",
+        "count": 56
+      },
+      {
+        "timestamp": "2025-09-15T12:00:00+00:00",
+        "count": 4
+      },
+      {
+        "timestamp": "2025-09-15T16:00:00+00:00",
+        "count": 1
+      },
+      {
+        "timestamp": "2025-09-15T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-16T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-16T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-16T08:00:00+00:00",
+        "count": 100
+      },
+      {
+        "timestamp": "2025-09-16T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-16T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-16T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-17T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-17T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-17T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-17T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-17T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-17T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-18T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-18T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-18T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-18T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-18T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-18T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-19T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-19T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-19T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-19T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-19T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-19T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-20T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-20T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-20T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-20T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-20T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-20T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-21T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-21T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-21T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-21T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-21T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-21T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-22T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-22T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-22T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-22T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-22T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-22T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-23T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-23T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-23T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-23T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-23T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-23T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-24T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-24T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-24T08:00:00+00:00",
+        "count": 199
+      },
+      {
+        "timestamp": "2025-09-24T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-24T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-24T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-25T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-25T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-25T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-25T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-25T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-25T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-26T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-26T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-26T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-26T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-26T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-26T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-27T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-27T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-27T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-27T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-27T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-27T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-28T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-28T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-28T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-28T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-28T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-28T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-29T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-29T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-29T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-29T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-29T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-29T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-30T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-30T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-30T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-09-30T12:00:00+00:00",
+        "count": 1
+      },
+      {
+        "timestamp": "2025-09-30T16:00:00+00:00",
+        "count": 1
+      },
+      {
+        "timestamp": "2025-09-30T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-01T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-01T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-01T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-01T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-01T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-01T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-02T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-02T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-02T08:00:00+00:00",
+        "count": 1
+      },
+      {
+        "timestamp": "2025-10-02T12:00:00+00:00",
+        "count": 1
+      },
+      {
+        "timestamp": "2025-10-02T16:00:00+00:00",
+        "count": 3
+      },
+      {
+        "timestamp": "2025-10-02T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-03T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-03T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-03T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-03T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-03T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-03T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-04T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-04T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-04T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-04T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-04T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-04T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-05T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-05T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-05T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-05T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-05T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-05T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-06T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-06T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-06T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-06T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-06T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-06T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-07T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-07T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-07T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-07T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-07T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-07T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-08T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-08T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-08T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-08T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-08T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-08T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-09T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-09T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-09T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-09T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-09T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-09T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-10T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-10T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-10T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-10T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-10T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-10T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-11T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-11T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-11T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-11T12:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-11T16:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-11T20:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-12T00:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-12T04:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-12T08:00:00+00:00",
+        "count": 0
+      },
+      {
+        "timestamp": "2025-10-12T12:00:00+00:00",
+        "count": 0
+      }
+    ],
     "four_hour_stats": {
-      "wallets_in_window": 411,
+      "wallets_in_window": 408,
       "total_wallets": 467,
-      "share_of_all_wallets": 0.880086,
-      "nonempty_buckets": 18,
+      "share_of_all_wallets": 0.873662,
+      "nonempty_buckets": 181,
       "peak_bucket": "2025-09-24T08:00:00+00:00",
       "peak_count": 199,
-      "peak_share_within_window": 0.484185,
-      "mean_wallets_per_nonempty_bucket": 22.8333
+      "peak_share_within_window": 0.487745,
+      "mean_wallets_per_nonempty_bucket": 25.5
+    },
+    "token_mint_date": "2025-10-02T14:01:17+00:00",
+    "window": {
+      "start": "2025-09-12T14:01:17+00:00",
+      "end": "2025-10-12T14:01:17+00:00",
+      "days_before_mint": 20,
+      "days_after_mint": 10
     },
     "charts": {
       "four_hour": {}
