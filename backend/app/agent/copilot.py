@@ -2,7 +2,6 @@ import asyncio
 import json
 import os
 import re
-from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
 from dotenv import load_dotenv
@@ -53,7 +52,7 @@ from these tables, return {"sql":"","reason":"not available in PostgreSQL"}.
 
 DISALLOWED_SQL = re.compile(
     r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|call|"
-    r"execute|prepare|deallocate|vacuum|analyze|refresh|pg_sleep|dblink|"
+    r"execute|prepare|deallocate|vacuum|analyze|refresh|pg_sleep|dblink|pg_read_file|lo_import|lo_export|"
     r"information_schema|pg_catalog)\b",
     re.IGNORECASE,
 )
@@ -203,8 +202,8 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                     tools = [
                         tool for tool in listed.tools
                         if not re.search(
-                            r"send|transfer|sign|swap|stake|burn|close|write|submit|create|delete|update",
-                            f"{tool.name} {tool.description or ''}",
+                            r"send|sign|swap|stake|burn|close|write|submit|create|delete|update|approve|mint",
+                            tool.name,
                             re.IGNORECASE,
                         )
                     ]
@@ -272,7 +271,7 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
         sql_error = str(exc)[:240]
 
     helius_result = None
-    if not rows and (not sql or sql_error or not rows):
+    if not rows:
         yield _emit("progress", {"label": "Database has no sufficient matching rows; checking Helius RPC", "state": "active"})
         helius_result = await _helius_mcp_fallback(request.message, context_text)
 
