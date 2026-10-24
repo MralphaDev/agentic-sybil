@@ -444,9 +444,9 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                 lines.extend(describe_exception(context, depth + 1))
             return lines
 
-        detail = "\\n".join(describe_exception(exc))[:5000]
+        detail = "\n".join(describe_exception(exc))[:5000]
         logger.exception("[Helius MCP] Request failed; flattened cause: %s", detail)
-        print(f"\\n[Helius MCP ERROR]\\n{detail}", flush=True)
+        print(f"\n[Helius MCP ERROR]\n{detail}", flush=True)
         return ("HELIUS_MCP_ERROR", detail)
 
 
