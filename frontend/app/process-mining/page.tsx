@@ -39,13 +39,13 @@ function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY,
   const isLoop = source === target;
   const isReciprocal = Boolean(data?.reciprocal) && !isLoop;
   const [smoothPath, smoothX, smoothY] = getBezierPath({ sourceX, sourceY, targetX, targetY, curvature: .34 });
-  const loopLift = 92 + Math.min(110, Math.sqrt(data?.count ?? 0) * 3);
+  const loopLift = 38 + Math.min(32, Math.sqrt(data?.count ?? 0) * 1.2);
   let path = smoothPath, labelX = smoothX, labelY = smoothY;
   if (isLoop) {
     // Route well outside the node on both sides so the self-loop is a visible arc,
     // not a tiny curve or a label sitting on top of the activity.
     const direction = sourceX >= targetX ? 1 : -1;
-    const outward = 86 + Math.min(44, Math.sqrt(data?.count ?? 0) * 1.5);
+    const outward = 34 + Math.min(18, Math.sqrt(data?.count ?? 0) * .7);
     path = `M ${sourceX},${sourceY} C ${sourceX + direction * outward},${sourceY - loopLift} ${targetX - direction * outward},${targetY - loopLift} ${targetX},${targetY}`;
     labelX = (sourceX + targetX) / 2;
     labelY = Math.min(sourceY, targetY) - loopLift + 5;
@@ -53,7 +53,7 @@ function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY,
     // Opposite directions take separate upper/lower arcs, never crossing at the center.
     const dx = targetX - sourceX;
     const dy = targetY - sourceY;
-    const offset = (sourceX < targetX ? -1 : 1) * (78 + Math.min(52, Math.sqrt(data?.count ?? 0) * 1.5));
+    const offset = (sourceX < targetX ? -1 : 1) * (42 + Math.min(24, Math.sqrt(data?.count ?? 0) * .8));
     const c1x = sourceX + dx * .34, c2x = sourceX + dx * .66;
     const c1y = sourceY + dy * .34 + offset, c2y = sourceY + dy * .66 + offset;
     path = `M ${sourceX},${sourceY} C ${c1x},${c1y} ${c2x},${c2y} ${targetX},${targetY}`;
