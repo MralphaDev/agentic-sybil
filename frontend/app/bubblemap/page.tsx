@@ -171,12 +171,13 @@ export default function BubblemapPage() {
       }
       // Glassy bubble: saturated gradient rim, translucent dark core.
       const bubble = ctx.createRadialGradient(node.x - radius * .36, node.y - radius * .4, radius * .08, node.x, node.y, radius * 1.2);
-      bubble.addColorStop(0, isMatch ? edgeColor + "d9" : "rgba(40,45,56,.3)");
-      bubble.addColorStop(.42, isMatch ? (kind === "wallet" ? edgeColor : palette.inner) + "66" : "rgba(12,14,20,.5)");
-      bubble.addColorStop(1, "rgba(4,5,9,.94)");
+      bubble.addColorStop(0, isMatch ? edgeColor + "b0" : "rgba(40,45,56,.22)");
+      bubble.addColorStop(.32, isMatch ? (kind === "wallet" ? edgeColor : palette.inner) + "42" : "rgba(8,10,15,.78)");
+      bubble.addColorStop(.72, "rgba(5,6,10,.92)");
+      bubble.addColorStop(1, "rgba(2,3,6,.98)");
       ctx.beginPath(); ctx.arc(node.x, node.y, radius + (active ? 2 : 0), 0, Math.PI * 2);
-      ctx.fillStyle = bubble; ctx.globalAlpha = isMatch ? .96 : .18; ctx.fill(); ctx.globalAlpha = 1;
-      ctx.strokeStyle = active ? "#ffffff" : edgeColor; ctx.lineWidth = (active ? 2.4 : 5.5) / view.k; ctx.stroke();
+      ctx.fillStyle = bubble; ctx.globalAlpha = isMatch ? .94 : .38; ctx.fill(); ctx.globalAlpha = 1;
+      ctx.strokeStyle = active ? "#ffffff" : edgeColor; ctx.lineWidth = (active ? 2.4 : 2.6) / view.k; ctx.stroke();
       ctx.beginPath(); ctx.arc(node.x - radius * .3, node.y - radius * .34, Math.max(1.4, radius * .17), 0, Math.PI * 2);
       ctx.fillStyle = "rgba(255,255,255,.58)"; ctx.fill();
       if (kind === "cex" || kind === "contract") {
@@ -227,10 +228,10 @@ export default function BubblemapPage() {
     setNodeCount(nodes.length); setEdgeCount(links.length); setSelected(null);
     viewRef.current = { x: width / 2, y: height / 2, k: 1 };
     const simulation = forceSimulation<SimNode>(nodes)
-      .force("link", forceLink<SimNode, SimLink>(links).id((node) => node.id).distance(mode === "funding" ? 118 : 104).strength(.12))
-      .force("charge", forceManyBody<SimNode>().strength(nodes.length > 1500 ? -95 : -145).distanceMax(520))
+      .force("link", forceLink<SimNode, SimLink>(links).id((node) => node.id).distance(mode === "funding" ? 175 : 155).strength(.08))
+      .force("charge", forceManyBody<SimNode>().strength(nodes.length > 1500 ? -220 : -340).distanceMax(1100))
       .force("center", forceCenter<SimNode>(0, 0))
-      .force("collision", forceCollide<SimNode>().radius((node) => Math.max(22, 20 + Math.log2(number(node.in_degree) + number(node.out_degree) + 1) * 1.8)).iterations(3))
+      .force("collision", forceCollide<SimNode>().radius((node) => Math.max(30, 28 + Math.log2(number(node.in_degree) + number(node.out_degree) + 1) * 2.2)).iterations(4))
       .alpha(1).alphaDecay(.035);
     simulation.on("tick", draw);
     simRef.current = simulation;
