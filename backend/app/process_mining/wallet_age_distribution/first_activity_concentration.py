@@ -166,13 +166,13 @@ def analyze_first_activity_concentration(
                 peak_count / window_wallets, 6
             ) if window_wallets else 0.0,
             "mean_wallets_per_nonempty_bucket": round(
-                float(counts.mean()), 4
+                float(counts[counts > 0].mean()) if (counts > 0).any() else 0.0, 4
             ),
         }
 
     four_hour_stats = distribution_stats(
         four_hour,
-        int(len(first_activity_in_window)),
+        wallet_count,
     )
 
     # ---------------------------------------------------------
