@@ -1,3 +1,4 @@
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,9 @@ import pandas as pd
 def analyze_first_activity_concentration(
     df: pd.DataFrame,
     output_dir: str | Path = ".",
+    token_mint_date: str | None = None,
+    days_before_mint: int = 20,
+    days_after_mint: int = 10,
 ) -> dict[str, Any]:
     """
     Analyze the distribution of each wallet's oldest recorded activity.
@@ -90,21 +94,37 @@ def analyze_first_activity_concentration(
     wallet_count = int(len(first_activity))
 
     # ---------------------------------------------------------
-    # 4. Build a four-hour distribution across the observed data.
-    #    Do not hard-code dates: investigations may cover any period.
+    # 4. Restrict the timeline to 20 days before through 10 days
+    #    after the earliest parsed event reported for the token mint.
     # ---------------------------------------------------------
+    mint_timestamp = pd.to_datetime(token_mint_date, utc=True, errors="coerce") if token_mint_date else pd.NaT
+    window_start = mint_timestamp - timedelta(days=days_before_mint) if pd.notna(mint_timestamp) else None
+    window_end = mint_timestamp + timedelta(days=days_after_mint) if pd.notna(mint_timestamp) else None
+
+    if window_start is not None and window_end is not None:
+        first_activity_in_window = first_activity[
+            (first_activity >= window_start) & (first_activity <= window_end)
+        ]
+        bucket_start = window_start.floor("4h")
+        bucket_end = window_end.floor("4h")
+    else:
+        # Graceful fallback if Helius cannot resolve a mint date.
+        first_activity_in_window = first_activity
+        bucket_start = first_activity_in_window.min().floor("4h") if not first_activity_in_window.empty else None
+        bucket_end = first_activity_in_window.max().floor("4h") if not first_activity_in_window.empty else None
+
     four_hour = (
-        first_activity.dt.floor("4h")
+        first_activity_in_window.dt.floor("4h")
         .value_counts()
         .sort_index()
     )
 
-    # Materialize empty buckets so the frontend can show elapsed time
-    # faithfully rather than connecting only non-empty timestamps.
-    if not four_hour.empty:
+    # Always materialize the complete 30-day timeline when the mint date is
+    # known, including empty buckets at the beginning/end of the window.
+    if bucket_start is not None and bucket_end is not None:
         full_index = pd.date_range(
-            start=four_hour.index.min(),
-            end=four_hour.index.max(),
+            start=bucket_start,
+            end=bucket_end,
             freq="4h",
             tz="UTC",
         )
@@ -152,7 +172,7 @@ def analyze_first_activity_concentration(
 
     four_hour_stats = distribution_stats(
         four_hour,
-        wallet_count,
+        int(len(first_activity_in_window)),
     )
 
     # ---------------------------------------------------------
@@ -262,6 +282,13 @@ def analyze_first_activity_concentration(
         "four_hour_distribution": four_hour_distribution,
         "four_hour_buckets": four_hour_buckets,
         "four_hour_stats": four_hour_stats,
+        "token_mint_date": mint_timestamp.isoformat() if pd.notna(mint_timestamp) else None,
+        "window": {
+            "start": window_start.isoformat() if window_start is not None else (bucket_start.isoformat() if bucket_start is not None else None),
+            "end": window_end.isoformat() if window_end is not None else (bucket_end.isoformat() if bucket_end is not None else None),
+            "days_before_mint": days_before_mint,
+            "days_after_mint": days_after_mint,
+        },
         "charts": {
             "four_hour": {},
         },
