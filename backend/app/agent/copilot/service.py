@@ -166,7 +166,7 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
             if not rows:
                 retry_sql, retry_reason = await _generate_sql(
                     request.message,
-                    context_text + "\\nPrevious query returned zero rows. Reconsider whether "
+                    context_text + "\nPrevious query returned zero rows. Reconsider whether "
                     "the question was over-filtered, whether token identity is stored in mint, "
                     "from_token, or to_token, and whether a broader valid query answers the "
                     "same user goal. Do not invent filters or facts. Previous SQL: " + safe_sql,
@@ -187,7 +187,7 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
         try:
             retry_sql, retry_reason = await _generate_sql(
                 request.message,
-                context_text + "\\nPrevious database attempt failed: " + sql_error
+                context_text + "\nPrevious database attempt failed: " + sql_error
                 + ". Correct the query while obeying the approved schema and read-only policy."
             )
             if retry_sql:
