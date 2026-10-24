@@ -5,6 +5,7 @@ from typing import Any
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from app.core.config import ENV_FILE, settings
+from app.agent.sse_manager import encode_sse
 
 load_dotenv(ENV_FILE, override=False)
 logger = logging.getLogger(__name__)
