@@ -25,24 +25,57 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* DEBUG: force visible global scrollbar */
+/* Responsive layout safety and unobtrusive scrollbars. */
 html,
-body,
+body {
+  min-height: 100%;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
 * {
-  scrollbar-width: thin !important;
-  scrollbar-color: #ff2020 #202020 !important;
+  scrollbar-width: thin;
+  scrollbar-color: #4b252d #111114;
 }
 
 ::-webkit-scrollbar {
-  width: 14px !important;
-  height: 14px !important;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #202020 !important;
+  background: #111114;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #ff2020 !important;
-  border-radius: 0 !important;
+  background: #4b252d;
+  border-radius: 999px;
+}
+
+img,
+canvas,
+svg,
+video {
+  max-width: 100%;
+}
+
+pre,
+code {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea,
+  button {
+    max-width: 100%;
+  }
 }
