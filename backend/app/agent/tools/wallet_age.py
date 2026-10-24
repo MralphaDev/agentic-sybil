@@ -11,6 +11,18 @@ from app.process_mining.wallet_age_distribution.first_activity_concentration imp
 def analyze_four_hour_wallet_age(context: AnalysisContext) -> dict[str, Any]:
     """Return only mint-relative wallet-age evidence, never the full history."""
     df = pd.DataFrame(context.events)
+    if not context.token_mint_date:
+        # Never fall back to the full historical timeline for the agent prompt.
+        wallet_count = int(df["wallet_address"].nunique()) if "wallet_address" in df.columns else 0
+        return {
+            "token_mint_date": None,
+            "window": {"days_before_mint": 10, "days_after_mint": 10},
+            "wallet_count": wallet_count,
+            "four_hour_stats": {},
+            "four_hour_buckets": [],
+            "note": "Mint date unavailable; full historical distribution omitted.",
+        }
+
     result = analyze_first_activity_concentration(
         df,
         token_mint_date=context.token_mint_date,
