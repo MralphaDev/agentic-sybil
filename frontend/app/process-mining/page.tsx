@@ -62,17 +62,24 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
     const roots = startNames.length ? startNames : [...names].filter((name) => !edges.some((edge) => edge.target === name));
     const sinks = endNames.length ? endNames : [...names].filter((name) => !edges.some((edge) => edge.source === name));
     const rank = new Map<string, number>();
-    names.forEach((name) => rank.set(name, roots.includes(name) ? 1 : 2));
-    for (let pass = 0; pass < Math.max(1, names.size - 1); pass++) {
-      let changed = false;
-      for (const edge of edges) {
-        const next = Math.min(names.size, (rank.get(edge.source) ?? 1) + 1);
-        if (!roots.includes(edge.target) && next > (rank.get(edge.target) ?? 1)) {
-          rank.set(edge.target, next); changed = true;
+    const adjacency = new Map<string, string[]>();
+    names.forEach((name) => adjacency.set(name, []));
+    edges.forEach((edge) => adjacency.get(edge.source)?.push(edge.target));
+    const seedQueue = [...roots];
+    roots.forEach((name) => rank.set(name, 1));
+    // BFS assigns each activity its shortest forward rank, so loops never push
+    // the graph into an enormous number of columns.
+    const assignRanks = (queue: string[]) => {
+      while (queue.length) {
+        const current = queue.shift()!;
+        for (const target of adjacency.get(current) ?? []) {
+          if (!rank.has(target)) { rank.set(target, (rank.get(current) ?? 1) + 1; queue.push(target); }
         }
       }
-      if (!changed) break;
-    }
+    };
+    assignRanks(seedQueue);
+    // Include disconnected cyclic components that cannot be reached from START.
+    for (const name of names) if (!rank.has(name)) { rank.set(name, 1); assignRanks([name]); }
     const maxRank = Math.max(2, ...rank.values());
     const columns = new Map<number, string[]>();
     for (const name of names) {
