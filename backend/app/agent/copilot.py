@@ -482,23 +482,45 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                             f"Schema diagnostics: {json.dumps(diagnostics, ensure_ascii=False, default=str)[:2500]}",
                         )
                     name, arguments = selected
-                    logger.info(
-                        "[Helius MCP] Calling tool=%s action=%s",
+                    action = arguments.get("action", "<direct-tool>")
+                    # Use warning-level diagnostics so these are visible even when
+                    # the application's logger is configured above INFO.
+                    logger.warning(
+                        "[Helius MCP] Calling tool=%s action=%s arguments=%r",
                         name,
-                        arguments.get("action", "<direct-tool>"),
+                        action,
+                        arguments,
                     )
-                    result = await session.call_tool(name, arguments)
+                    try:
+                        result = await session.call_tool(name, arguments)
+                    except Exception:
+                        logger.exception(
+                            "[Helius MCP] call_tool raised; tool=%s action=%s",
+                            name,
+                            action,
+                        )
+                        raise
+
                     serialized = json.dumps(result.content, ensure_ascii=False, default=str)
-                    if getattr(result, "isError", False):
+                    is_error = getattr(result, "isError", False)
+                    logger.warning(
+                        "[Helius MCP] call_tool returned tool=%s action=%s isError=%r "
+                        "content=%s",
+                        name,
+                        action,
+                        is_error,
+                        serialized[:5000],
+                    )
+                    if is_error:
                         detail = serialized[:5000]
                         logger.error(
                             "[Helius MCP] Tool returned isError=true; tool=%s action=%s result=%s",
                             name,
-                            arguments.get("action", "<direct-tool>"),
+                            action,
                             detail,
                         )
                         return ("HELIUS_MCP_ERROR", detail)
-                    logger.info(
+                    logger.warning(
                         "[Helius MCP] Tool succeeded; tool=%s response_chars=%d",
                         name,
                         len(serialized),
