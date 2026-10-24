@@ -24,3 +24,25 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* DEBUG: force visible global scrollbar */
+html,
+body,
+* {
+  scrollbar-width: thin !important;
+  scrollbar-color: #ff2020 #202020 !important;
+}
+
+::-webkit-scrollbar {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+::-webkit-scrollbar-track {
+  background: #202020 !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ff2020 !important;
+  border-radius: 0 !important;
+}

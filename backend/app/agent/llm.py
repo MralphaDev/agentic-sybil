@@ -11,5 +11,5 @@ llm = ChatOpenAI(
     api_key=SecretStr(os.environ["DEEPSEEK_API_KEY"]),
     base_url="https://api.deepseek.com",
     temperature=0,
-    max_tokens=1500, #type:ignore 
+    max_tokens=200, #type:ignore 
 )

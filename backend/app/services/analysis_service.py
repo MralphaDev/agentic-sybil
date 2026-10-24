@@ -1,42 +1,157 @@
 import json
 import time
-from typing import Callable, Any
+from typing import Any, Callable
 
 import networkx as nx
 from fastapi.encoders import jsonable_encoder
 
-from app.database.queries import get_wallet_events
-from app.database.queries import get_wallet_profile_addresses
-from app.database.features.write_feature import write_wallet_features
-from app.process_mining.orchestrator import run_process_mining
-from app.features.compute_wallet_feature import compute_wallet_features
-from app.transaction_info_helper.transfer_extractor import extract_wallet_transfers
-from app.transaction_info_helper.swap_extractor import extract_wallet_swaps
-from app.transaction_graph.aggregated_tx_graph.builder import build_aggregated_tx_graph
-from app.transaction_graph.first_fund_graph import build_first_fund_graph
-from app.ml.similarity_clustering import cluster_wallets
-from app.ml.noise_interpretation import interpret_noise_wallets
-from app.features.normalize_wallet_features import normalize_wallet_features
 from app.agent.context import AnalysisContext
 from app.agent.orchestrator import run_agent_investigation
+from app.agent.sse_manager import get_current_event_callback
+from app.database.features.write_feature import write_wallet_features
+from app.database.queries import (
+    get_wallet_events,
+    get_wallet_profile_addresses,
+)
+from app.features.compute_wallet_feature import compute_wallet_features
+from app.features.normalize_wallet_features import normalize_wallet_features
+from app.process_mining.orchestrator import run_process_mining
+from app.transaction_graph.aggregated_tx_graph.builder import (
+    build_aggregated_tx_graph,
+)
+from app.transaction_graph.first_fund_graph import build_first_fund_graph
+from app.transaction_info_helper.swap_extractor import extract_wallet_swaps
+from app.transaction_info_helper.transfer_extractor import (
+    extract_wallet_transfers,
+)
+
+
+STEP_LABELS: dict[str, tuple[str, str]] = {
+    "01_get_wallet_events": (
+        "Loading wallet events",
+        "Loading transaction history from the database.",
+    ),
+    "02_get_wallet_profile_addresses": (
+        "Loading wallet profiles",
+        "Retrieving wallet addresses for graph analysis.",
+    ),
+    "03_extract_wallet_transfers": (
+        "Extracting wallet transfers",
+        "Preparing wallet-to-wallet fund-flow records.",
+    ),
+    "04_extract_wallet_swaps": (
+        "Extracting wallet swaps",
+        "Preparing token trading activity.",
+    ),
+    "05_compute_wallet_features": (
+        "Computing wallet features",
+        "Calculating behavioral features for each wallet.",
+    ),
+    "06_normalize_wallet_features": (
+        "Normalizing wallet features",
+        "Preparing wallet features for downstream analysis.",
+    ),
+    "07_build_first_fund_graph": (
+        "Building first-funding graph",
+        "Tracing relationships between initial funding sources and wallets.",
+    ),
+    "08_build_aggregated_tx_graph": (
+        "Building transaction graph",
+        "Aggregating wallet-to-wallet transaction relationships.",
+    ),
+    "11_write_wallet_features": (
+        "Saving wallet features",
+        "Persisting computed wallet features to the database.",
+    ),
+    "12_run_process_mining": (
+        "Running Process Mining",
+        "Analyzing wallet action sequences, variants, and intermediary behavior.",
+    ),
+    "13_build_analysis_context": (
+        "Preparing investigation context",
+        "Assembling transaction events, wallet features, and graphs.",
+    ),
+    "14_run_agent_investigation": (
+        "Running agent investigation",
+        "The agent is examining evidence and selecting investigation tools.",
+    ),
+    "15_serialize_first_fund_graph": (
+        "Preparing first-funding graph",
+        "Converting graph data into a frontend-compatible format.",
+    ),
+    "16_serialize_aggregated_tx_graph": (
+        "Preparing transaction graph",
+        "Converting transaction graph data for the frontend.",
+    ),
+    "17_save_first_fund_graph_json": (
+        "Saving first-funding graph",
+        "Writing the first-funding graph JSON file.",
+    ),
+    "18_save_aggregated_tx_graph_json": (
+        "Saving transaction graph",
+        "Writing the aggregated transaction graph JSON file.",
+    ),
+}
+
+
+def emit_stage(
+    step: str,
+    state: str,
+    elapsed_seconds: float | None = None,
+) -> None:
+    """Send pipeline progress to the active SSE investigation, if any."""
+    callback = get_current_event_callback()
+    if callback is None:
+        return
+
+    title, detail = STEP_LABELS.get(
+        step,
+        (step.replace("_", " ").title(), "Processing this analysis step."),
+    )
+
+    payload: dict[str, Any] = {
+        "step": step,
+        "title": title,
+        "detail": detail,
+        "state": state,
+    }
+
+    if elapsed_seconds is not None:
+        payload["elapsed_seconds"] = round(elapsed_seconds, 3)
+
+    try:
+        callback("stage", payload)
+    except Exception as exc:
+        # Progress reporting must never break the actual analysis.
+        print(f"[PROGRESS] Failed to emit stage {step}: {exc}", flush=True)
 
 
 def timed_step(name: str, func: Callable, *args, **kwargs) -> Any:
-    """Execute a function and print its elapsed time, even if it fails."""
+    """Execute one pipeline step and publish its running/finished/failed state."""
     start = time.perf_counter()
+    emit_stage(name, "running")
 
     try:
-        return func(*args, **kwargs)
-    finally:
+        result = func(*args, **kwargs)
+    except Exception:
         elapsed = time.perf_counter() - start
-        print(f"[TIMING] {name}: {elapsed:.4f}s", flush=True)
+        print(
+            f"[TIMING] {name}: FAILED after {elapsed:.4f}s",
+            flush=True,
+        )
+        emit_stage(name, "failed", elapsed)
+        raise
+
+    elapsed = time.perf_counter() - start
+    print(f"[TIMING] {name}: {elapsed:.4f}s", flush=True)
+    emit_stage(name, "finished", elapsed)
+    return result
 
 
 def execute_analysis(target_token_mint: str) -> dict:
     total_start = time.perf_counter()
 
     try:
-        # 1. Load data
         events = timed_step(
             "01_get_wallet_events",
             get_wallet_events,
@@ -47,20 +162,19 @@ def execute_analysis(target_token_mint: str) -> dict:
             get_wallet_profile_addresses,
         )
 
-        # 2. Extract transaction information
         wallet_transfers = timed_step(
             "03_extract_wallet_transfers",
             extract_wallet_transfers,
             events,
         )
 
+        # Retained to preserve the existing extraction pipeline.
         wallet_swaps = timed_step(
             "04_extract_wallet_swaps",
             extract_wallet_swaps,
             events,
         )
 
-        # 3. Compute and normalize wallet features
         raw_wallet_features = timed_step(
             "05_compute_wallet_features",
             compute_wallet_features,
@@ -74,7 +188,6 @@ def execute_analysis(target_token_mint: str) -> dict:
             raw_wallet_features,
         )
 
-        # 4. Build transaction graphs
         first_fund_graph = timed_step(
             "07_build_first_fund_graph",
             build_first_fund_graph,
@@ -89,41 +202,23 @@ def execute_analysis(target_token_mint: str) -> dict:
             profile_wallets,
         )
 
-        # 5. Cluster wallets
-        '''clustering_result = timed_step(
-            "09_cluster_wallets",
-            cluster_wallets,
-            agg_graph=agg_graph,
-            wallet_features=wallet_features,
-        )'''
+        # Clustering remains disabled until the clustering result is needed.
+        # verified_sybil_wallets: set[str] = set()
 
-        # 6. Interpret noise wallets (currently disabled)
-        verified_sybil_wallets: set[str] = set()
-
-        # noise_result = timed_step(
-        #     "10_interpret_noise_wallets",
-        #     interpret_noise_wallets,
-        #     agg_graph=agg_graph,
-        #     noise_wallets=clustering_result["noise_wallets"],
-        #     verified_sybil_wallets=verified_sybil_wallets,
-        # )
-
-        # 7. Persist computed features
         written_count = timed_step(
             "11_write_wallet_features",
             write_wallet_features,
             wallet_features,
         )
 
-        # 8. Process mining (currently disabled)
-        # process_mining_result = timed_step(
-        #     "12_run_process_mining",
-        #     run_process_mining,
-        #     events=events,
-        #     target_token_mint=target_token_mint,
-        # )
+        # Enabled so the frontend can show each Process Mining substep.
+        process_mining_result = timed_step(
+            "12_run_process_mining",
+            run_process_mining,
+            events=events,
+            target_token_mint=target_token_mint,
+        )
 
-        # 9. Build investigation context
         context = timed_step(
             "13_build_analysis_context",
             AnalysisContext,
@@ -136,14 +231,12 @@ def execute_analysis(target_token_mint: str) -> dict:
             aggregated_tx_graph=agg_graph,
         )
 
-        # 10. Run AI investigation
-        investigation_result = timed_step(
+        '''investigation_result = timed_step(
             "14_run_agent_investigation",
             run_agent_investigation,
             context,
-        )
+        )'''
 
-        # 11. Serialize graphs
         first_fund_data = timed_step(
             "15_serialize_first_fund_graph",
             lambda: jsonable_encoder(
@@ -164,12 +257,11 @@ def execute_analysis(target_token_mint: str) -> dict:
             ),
         )
 
-        # 12. Write graph JSON files
         def save_json(path: str, data: dict) -> None:
-            with open(path, "w", encoding="utf-8") as f:
+            with open(path, "w", encoding="utf-8") as file:
                 json.dump(
                     data,
-                    f,
+                    file,
                     ensure_ascii=False,
                     indent=2,
                 )
@@ -188,23 +280,20 @@ def execute_analysis(target_token_mint: str) -> dict:
             aggregated_tx_data,
         )
 
-        # 13. Return results
         return {
             "wallet_features": wallet_features,
-
             "first_fund_graph": {
                 "nodes": first_fund_graph.number_of_nodes(),
                 "edges": first_fund_graph.number_of_edges(),
                 "data": first_fund_data,
             },
-
             "aggregated_tx_graph": {
                 "nodes": agg_graph.number_of_nodes(),
                 "edges": agg_graph.number_of_edges(),
                 "data": aggregated_tx_data,
             },
-
-            "investigation": investigation_result,
+            "process_mining_result": process_mining_result,
+            #"investigation": investigation_result,
         }
 
     finally:
