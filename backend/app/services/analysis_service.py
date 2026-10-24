@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 from typing import Any, Callable
@@ -6,6 +7,7 @@ import networkx as nx
 from fastapi.encoders import jsonable_encoder
 
 from app.agent.context import AnalysisContext
+from app.api.providers.helius.client import HeliusClient
 from app.agent.orchestrator import run_agent_investigation
 from app.agent.sse_manager import get_current_event_callback
 from app.database.features.write_feature import write_wallet_features
@@ -148,6 +150,16 @@ def timed_step(name: str, func: Callable, *args, **kwargs) -> Any:
     return result
 
 
+def _get_token_mint_date(token_mint: str) -> str | None:
+    """Resolve the earliest parsed event for the mint via Helius."""
+    async def fetch() -> str | None:
+        async with HeliusClient() as helius:
+            return await helius.get_token_mint_date(token_mint)
+
+    # execute_analysis runs in a worker thread from the SSE pipeline.
+    return asyncio.run(fetch())
+
+
 def execute_analysis(target_token_mint: str) -> dict:
     total_start = time.perf_counter()
 
@@ -211,12 +223,30 @@ def execute_analysis(target_token_mint: str) -> dict:
             wallet_features,
         )
 
+        # Resolve the token's earliest parsed event so temporal evidence is
+        # plotted relative to mint creation rather than the full wallet history.
+        try:
+            token_mint_date = timed_step(
+                "10_get_token_mint_date",
+                _get_token_mint_date,
+                target_token_mint,
+            )
+        except Exception as exc:
+            # Do not fail the entire investigation if Helius cannot resolve the mint.
+            print(
+                f"[WARN] Could not resolve token mint date; using observed "
+                f"wallet activity range instead: {exc}",
+                flush=True,
+            )
+            token_mint_date = None
+
         # Enabled so the frontend can show each Process Mining substep.
         process_mining_result = timed_step(
             "12_run_process_mining",
             run_process_mining,
             events=events,
             target_token_mint=target_token_mint,
+            token_mint_date=token_mint_date,
         )
 
         context = timed_step(
