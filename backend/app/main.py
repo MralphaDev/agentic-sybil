@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from app.api.routes import forensic, realtime
 from app.database.connection import open_pool, close_pool
 from app.agent.sse_router import router as investigations_router
+from app.agent.copilot import router as copilot_router
 
 
 
@@ -38,3 +39,4 @@ app.include_router(
 )
 
 app.include_router(investigations_router, prefix="/api")
+app.include_router(copilot_router, prefix="/api")
