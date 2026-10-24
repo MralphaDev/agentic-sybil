@@ -102,6 +102,51 @@ def _lookup_wallet_direct(wallet_address: str) -> dict[str, Any]:
             ]
             return {"wallet_profile": profile, "recent_events": events}
 
+
+def _lookup_wallet_funding_evidence(wallet_address: str) -> dict[str, Any]:
+    """Find a wallet's recorded funder plus earliest incoming events, without relying on Helius."""
+    with get_connection() as conn:
+        with conn.transaction():
+            conn.execute("SET TRANSACTION READ ONLY")
+            conn.execute(f"SET LOCAL statement_timeout = '{SQL_TIMEOUT_MS}ms'")
+            profile_cursor = conn.execute(
+                """
+                SELECT wallet_address, first_funder, first_fund_time, first_fund_amount,
+                       first_fund_token, total_tx_count, is_exchange, forensic_status
+                FROM public.wallet_profiles
+                WHERE wallet_address = %s
+                LIMIT 1
+                """,
+                (wallet_address,),
+            )
+            profile_columns = [column.name for column in profile_cursor.description or []]
+            profile_row = profile_cursor.fetchone()
+            profile = (
+                {column: _json_safe(value) for column, value in zip(profile_columns, profile_row)}
+                if profile_row else None
+            )
+            event_cursor = conn.execute(
+                """
+                SELECT wallet_address, signature, type, translated_type, event_time,
+                       from_user_address, to_user_address, kind, from_token, from_amount,
+                       to_token, to_amount, protocol, direction, amount, mint
+                FROM public.wallet_event_log
+                WHERE to_user_address = %s
+                  AND from_user_address IS NOT NULL
+                  AND from_user_address <> %s
+                ORDER BY event_time ASC NULLS LAST
+                LIMIT 20
+                """,
+                (wallet_address, wallet_address),
+            )
+            columns = [column.name for column in event_cursor.description or []]
+            incoming = [
+                {column: _json_safe(value) for column, value in zip(columns, row)}
+                for row in event_cursor.fetchall()
+            ]
+            return {"wallet_profile": profile, "earliest_incoming_events": incoming}
+
+
 def _get_investigation_context(run_id: str) -> tuple[str, dict[str, Any]]:
     run = get_run(run_id)
     if run is None:
