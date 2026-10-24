@@ -45,6 +45,7 @@ export default function BubblemapPage() {
   const [canvasReady, setCanvasReady] = useState(false);
   const [nodeCount, setNodeCount] = useState(0);
   const [edgeCount, setEdgeCount] = useState(0);
+  const renderStateRef = useRef({ mode, searchQuery: "", selected: null as string | null });
 
   useEffect(() => {
     const runId = sessionStorage.getItem("sybiltrace_run_id");
@@ -63,6 +64,7 @@ export default function BubblemapPage() {
   const selectedNode = nodesRef.current.find((node) => node.id === selected);
   const selectedFeatures = selected ? { ...(features[selected] ?? {}), ...(selectedNode ?? {}) } : null;
   const searchQuery = search.trim().toLowerCase();
+  renderStateRef.current = { mode, searchQuery, selected };
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -82,6 +84,7 @@ export default function BubblemapPage() {
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
+    const { mode: currentMode, searchQuery: currentSearch, selected: currentSelected } = renderStateRef.current;
     const gradient = ctx.createRadialGradient(width * .5, height * .48, 20, width * .5, height * .48, Math.max(width, height) * .75);
     gradient.addColorStop(0, "#140d12"); gradient.addColorStop(.58, "#090a0e"); gradient.addColorStop(1, "#06070a");
     ctx.fillStyle = gradient; ctx.fillRect(0, 0, width, height);
@@ -97,7 +100,7 @@ export default function BubblemapPage() {
     for (let y = Math.floor(top / step) * step; y < bottom; y += step) { ctx.moveTo(left, y); ctx.lineTo(right, y); }
     ctx.stroke();
     const nodes = nodesRef.current, links = linksRef.current;
-    const visible = new Set(nodes.filter((node) => !searchQuery || node.id.toLowerCase().includes(searchQuery)).map((node) => node.id));
+    const visible = new Set(nodes.filter((node) => !currentSearch || node.id.toLowerCase().includes(currentSearch)).map((node) => node.id));
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
     const edgeLimit = Math.min(links.length, 12000);
     for (let i = 0; i < edgeLimit; i++) {
@@ -105,30 +108,30 @@ export default function BubblemapPage() {
       const source = typeof link.source === "string" ? nodeById.get(link.source) : link.source;
       const target = typeof link.target === "string" ? nodeById.get(link.target) : link.target;
       if (!source || !target || source.x == null || source.y == null || target.x == null || target.y == null) continue;
-      const relevant = !selected || source.id === selected || target.id === selected;
+      const relevant = !currentSelected || source.id === currentSelected || target.id === currentSelected;
       ctx.beginPath(); ctx.moveTo(source.x, source.y); ctx.lineTo(target.x, target.y);
-      ctx.strokeStyle = relevant ? (mode === "funding" ? "rgba(251,146,60,.34)" : "rgba(248,113,113,.25)") : "rgba(148,163,184,.035)";
+      ctx.strokeStyle = relevant ? (currentMode === "funding" ? "rgba(251,146,60,.34)" : "rgba(248,113,113,.25)") : "rgba(148,163,184,.035)";
       ctx.lineWidth = (relevant ? .75 : .45) / view.k; ctx.stroke();
     }
     for (const node of nodes) {
       if (node.x == null || node.y == null) continue;
-      const isMatch = !searchQuery || visible.has(node.id);
-      const active = selected === node.id;
+      const isMatch = !currentSearch || visible.has(node.id);
+      const active = currentSelected === node.id;
       const degree = number(node.in_degree) + number(node.out_degree);
       const radius = Math.max(2.2, Math.min(8.5, 2.1 + Math.log2(degree + 1) * 1.2));
-      const color = mode === "funding" ? (degree >= 4 ? "#fb7185" : "#f59e0b") : (degree >= 5 ? "#fb7185" : degree >= 2 ? "#38bdf8" : "#8b929f");
+      const color = currentMode === "funding" ? (degree >= 4 ? "#fb7185" : "#f59e0b") : (degree >= 5 ? "#fb7185" : degree >= 2 ? "#38bdf8" : "#8b929f");
       if (active) { ctx.beginPath(); ctx.arc(node.x, node.y, radius + 8, 0, Math.PI * 2); ctx.strokeStyle = "rgba(254,202,202,.8)"; ctx.lineWidth = 1.2 / view.k; ctx.setLineDash([3 / view.k, 4 / view.k]); ctx.stroke(); ctx.setLineDash([]); }
-      if (isMatch && searchQuery) { ctx.beginPath(); ctx.arc(node.x, node.y, radius + 6, 0, Math.PI * 2); ctx.fillStyle = "rgba(248,113,113,.15)"; ctx.fill(); }
+      if (isMatch && currentSearch) { ctx.beginPath(); ctx.arc(node.x, node.y, radius + 6, 0, Math.PI * 2); ctx.fillStyle = "rgba(248,113,113,.15)"; ctx.fill(); }
       ctx.beginPath(); ctx.arc(node.x, node.y, radius + (active ? 1.8 : 0), 0, Math.PI * 2);
       ctx.fillStyle = isMatch ? color : "rgba(100,110,125,.13)"; ctx.globalAlpha = isMatch ? (active ? 1 : .78) : .22; ctx.fill(); ctx.globalAlpha = 1;
       ctx.strokeStyle = active ? "#fff" : color; ctx.lineWidth = (active ? 1.4 : .45) / view.k; ctx.stroke();
-      if (active || (searchQuery && isMatch) || (view.k > 1.4 && nodes.length < 300)) {
+      if (active || (currentSearch && isMatch) || (view.k > 1.4 && nodes.length < 300)) {
         ctx.font = `${active ? 11 : 9}px ui-monospace, SFMono-Regular, monospace`;
         ctx.fillStyle = active ? "#fff" : "#b9c0cb"; ctx.fillText(shortAddress(node.id), node.x + radius + 5, node.y + 3);
       }
     }
     ctx.restore();
-  }, [mode, searchQuery, selected]);
+  }, []);
 
   useEffect(() => {
     if (loading || !hostRef.current) return;
