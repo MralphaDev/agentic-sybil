@@ -148,8 +148,7 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
     # A mint address in a "who sold this token?" question is not a wallet address.
     # Route this common database question to a deterministic aggregate query.
     token_seller_query = bool(
-        extracted_address
-        and re.search(r"\b(sell|sold|seller|selling|sell off|dumped)\b", request.message, re.IGNORECASE)
+        re.search(r"\b(sell|sold|seller|selling|sell off|dumped)\b", request.message, re.IGNORECASE)
         and re.search(r"\b(wallets?|token|mint|coin|holders?)\b", request.message, re.IGNORECASE)
     )
     wallet_address = None if token_seller_query else extracted_address
@@ -157,7 +156,7 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
     if token_seller_query:
         yield _emit("progress", {"label": "Finding wallets that sold this token in PostgreSQL", "state": "active"})
         try:
-            rows = await asyncio.to_thread(_lookup_top_token_sellers, extracted_address, 5)
+            rows = await asyncio.to_thread(_lookup_top_token_sellers, extracted_address, 5 if extracted_address else 50)
             database_has_transaction_rows = bool(rows)
             # If the deterministic lookup finds no rows, let the general SQL planner
             # try alternate interpretations of how this ingestor records token mints.
