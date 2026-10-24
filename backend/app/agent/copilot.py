@@ -365,15 +365,15 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                     # action. Keep transaction history as the default when no clearer intent
                     # is expressed; never expose wallet-write actions through this fallback.
                     q = question.lower()
-                    if re.search(r"\\b(identity|who owns|owner of|label|exchange|known wallet|wallet label)\\b", q):
+                    if re.search(r"\b(identity|who owns|owner of|label|exchange|known wallet|wallet label)\b", q):
                         wallet_action = "getWalletIdentity"
-                    elif re.search(r"\\b(funded by|funding source|first fund|who funded|funding wallet)\\b", q):
+                    elif re.search(r"\b(funded by|funding source|first fund|who funded|funding wallet)\b", q):
                         wallet_action = "getWalletFundedBy"
-                    elif re.search(r"\\b(transfers?|sent|received|counterpart(y|ies)|inbound|outbound)\\b", q):
+                    elif re.search(r"\b(transfers?|sent|received|counterpart(y|ies)|inbound|outbound)\b", q):
                         wallet_action = "getWalletTransfers"
-                    elif re.search(r"\\b(token balances?|spl balances?|token holdings?|holdings|portfolio|usd value|asset balances?)\\b", q):
-                        wallet_action = "getWalletBalances" if re.search(r"\\b(portfolio|usd value|total value)\\b", q) else "getTokenBalances"
-                    elif re.search(r"\\b(sol balance|native balance|how much sol|sol amount|wallet balance|balance of)\\b", q):
+                    elif re.search(r"\b(token balances?|spl balances?|token holdings?|holdings|portfolio|usd value|asset balances?)\b", q):
+                        wallet_action = "getWalletBalances" if re.search(r"\b(portfolio|usd value|total value)\b", q) else "getTokenBalances"
+                    elif re.search(r"\b(sol balance|native balance|how much sol|sol amount|wallet balance|balance of)\b", q):
                         wallet_action = "getBalance"
                     else:
                         wallet_action = "getWalletHistory"
