@@ -4,7 +4,7 @@ import "@xyflow/react/dist/style.css";
 import Link from "next/link";
 import dagre from "dagre";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ReactFlow, Background, Controls, MiniMap, Handle, Position, MarkerType, type Node, type Edge as FlowEdge, type NodeProps, type EdgeProps, BaseEdge, EdgeLabelRenderer, getBezierPath, useNodesState, useEdgesState } from "@xyflow/react";
+import { ReactFlow, Background, Controls, MiniMap, Handle, Position, MarkerType, type Node, type Edge as FlowEdge, type NodeProps, type EdgeProps, BaseEdge, EdgeLabelRenderer, getBezierPath, getSmoothStepPath, useNodesState, useEdgesState } from "@xyflow/react";
 import { ArrowLeft, GitBranch, Activity, Users, Repeat2, TrendingUp, Filter, Network, X } from "lucide-react";
 
 type AnyRecord = Record<string, unknown>;
@@ -41,17 +41,21 @@ function ActivityNode({ id, data }: NodeProps<Node<{ title: string; incoming: nu
 function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null; reciprocal?: boolean; selfLoop?: boolean }>>) {
   const selfLoop = Boolean(data?.selfLoop || source === target);
   const isReciprocal = Boolean(data?.reciprocal);
-  const [normalPath, normalLabelX, normalLabelY] = getBezierPath({
+  const [bezierPath, bezierLabelX, bezierLabelY] = getBezierPath({
     sourceX, sourceY, targetX, targetY,
     curvature: isReciprocal ? 0.42 : 0.25,
   });
-  // Compact loop path: route just outside the node's right edge, not in a
-  // large oval. Dedicated loop handles give this edge distinct endpoints.
-  const loopReach = 34;
-  const loopPath = `M ${sourceX},${sourceY} C ${sourceX + loopReach},${sourceY - 5} ${targetX + loopReach},${targetY + 5} ${targetX},${targetY}`;
-  const path = selfLoop ? loopPath : normalPath;
-  const labelX = selfLoop ? Math.max(sourceX, targetX) + loopReach + 10 : normalLabelX;
-  const labelY = selfLoop ? (sourceY + targetY) / 2 : normalLabelY;
+  const [orthogonalPath, orthogonalLabelX, orthogonalLabelY] = getSmoothStepPath({
+    sourceX, sourceY, targetX, targetY,
+    borderRadius: 16,
+    offset: isReciprocal ? 28 : 18,
+  });
+  // Self-loops use the dedicated pair of handles on the right side of a node.
+  const loopReach = 24;
+  const loopPath = `M ${sourceX},${sourceY} C ${sourceX + loopReach},${sourceY} ${targetX + loopReach},${targetY} ${targetX},${targetY}`;
+  const path = selfLoop ? loopPath : (isReciprocal ? bezierPath : orthogonalPath);
+  const labelX = selfLoop ? Math.max(sourceX, targetX) + loopReach + 12 : (isReciprocal ? bezierLabelX : orthogonalLabelX);
+  const labelY = selfLoop ? (sourceY + targetY) / 2 : (isReciprocal ? bezierLabelY : orthogonalLabelY);
   return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...(isReciprocal ? { strokeWidth: Math.max(2, Number(style?.strokeWidth ?? 1.5)), strokeOpacity: .9 } : {}) }}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${selfLoop ? "border-amber-300/40 bg-amber-950/95 text-amber-100" : isReciprocal ? "border-sky-300/40 bg-sky-950/95 text-sky-100" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? (selfLoop ? "Self-loop / rework frequency" : "Transition frequency") : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{(data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
 }
 const nodeTypes = { activity: ActivityNode };
@@ -100,8 +104,11 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
       width: activityWidth,
       height: activityStats.get(name)!.rework > 0 ? activityHeight + 24 : activityHeight,
     }));
-    // Include self-loops in the layout graph so Dagre reserves room for them.
-    allEdges.forEach((edge, index) => layoutGraph.setEdge(edge.source, edge.target, {}, `activity-${index}`));
+    // Self-loops are rendered with dedicated handles; excluding them from
+    // rank calculation prevents rework edges from distorting the main flow.
+    allEdges.filter((edge) => edge.source !== edge.target).forEach((edge, index) => {
+      layoutGraph.setEdge(edge.source, edge.target, {}, `activity-${index}`);
+    });
     startNames.forEach((name, index) => layoutGraph.setEdge("__START__", name, {}, `start-${index}`));
     endNames.forEach((name, index) => layoutGraph.setEdge(name, "__END__", {}, `end-${index}`));
     dagre.layout(layoutGraph);
