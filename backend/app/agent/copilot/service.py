@@ -164,20 +164,53 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
             # An empty result is a prompt to reconsider assumptions, not proof that the
             # database lacks evidence. Retry once with the first query/result as feedback.
             if not rows:
-                retry_sql, retry_reason = await _generate_sql(
+                # Do not guess a second final query blindly. First inspect the actual
+                # stored values relevant to the question, then plan the answer query
+                # using those observations and the schema.
+                diagnostic_sql, diagnostic_reason = await _generate_sql(
                     request.message,
-                    context_text + "\nPrevious query returned zero rows. Reconsider whether "
-                    "the question was over-filtered, whether token identity is stored in mint, "
-                    "from_token, or to_token, and whether a broader valid query answers the "
-                    "same user goal. Do not invent filters or facts. Previous SQL: " + safe_sql,
+                    context_text + "\nPrevious answer query returned zero rows. Previous SQL: " + safe_sql,
+                    diagnostic=True,
                 )
-                if retry_sql and retry_sql.strip() != sql.strip():
-                    safe_retry_sql = _validate_sql(retry_sql)
-                    yield _emit("progress", {"label": ("Retry: " + retry_reason)[:100], "state": "active"})
-                    retry_rows = await asyncio.to_thread(_run_readonly_query, safe_retry_sql)
-                    if retry_rows:
-                        sql, rows = retry_sql, retry_rows
-                        database_has_transaction_rows = True
+                diagnostic_rows = []
+                if diagnostic_sql:
+                    safe_diagnostic_sql = _validate_sql(diagnostic_sql)
+                    yield _emit("progress", {"label": ("Inspecting stored data: " + diagnostic_reason)[:100], "state": "active"})
+                    diagnostic_rows = await asyncio.to_thread(_run_readonly_query, safe_diagnostic_sql)
+
+                if diagnostic_rows:
+                    observed_context = (
+                        context_text
+                        + "\nPrevious answer query returned zero rows. SQL: " + safe_sql
+                        + "\nSchema/data diagnostic SQL: " + safe_diagnostic_sql
+                        + "\nObserved diagnostic rows: "
+                        + json.dumps(diagnostic_rows, ensure_ascii=False, default=str)[:7000]
+                        + "\nUse these observed values to infer the correct predicates and amount semantics. "
+                          "Now generate the actual query that answers the user's original goal; do not return the diagnostic query again."
+                    )
+                    retry_sql, retry_reason = await _generate_sql(request.message, observed_context)
+                    if retry_sql:
+                        safe_retry_sql = _validate_sql(retry_sql)
+                        yield _emit("progress", {"label": ("Replanning from observed data: " + retry_reason)[:100], "state": "active"})
+                        retry_rows = await asyncio.to_thread(_run_readonly_query, safe_retry_sql)
+                        if retry_rows:
+                            sql, rows = retry_sql, retry_rows
+                            database_has_transaction_rows = True
+                        else:
+                            # One final replan is allowed, now with both failed predicates
+                            # and the diagnostic observations available as feedback.
+                            final_sql, final_reason = await _generate_sql(
+                                request.message,
+                                observed_context + "\nThe query based on these observations also returned zero rows. "
+                                "Reconsider the assumptions and produce the most defensible query for the original goal.",
+                            )
+                            if final_sql:
+                                safe_final_sql = _validate_sql(final_sql)
+                                yield _emit("progress", {"label": ("Final replan: " + final_reason)[:100], "state": "active"})
+                                final_rows = await asyncio.to_thread(_run_readonly_query, safe_final_sql)
+                                if final_rows:
+                                    sql, rows = final_sql, final_rows
+                                    database_has_transaction_rows = True
         else:
             sql_error = "SQL planner did not produce a query"
     except Exception as exc:
