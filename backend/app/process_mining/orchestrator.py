@@ -244,6 +244,17 @@ def run_process_mining(
         dfg_result,
     )
 
+    filtered_dfg_result = add_transition_probabilities(
+        dfg_result.get(
+            "filtered_dfg",
+            {
+                "edges": [],
+                "start_activities": {},
+                "end_activities": {},
+            },
+        )
+    )
+
     variant_data = _timed_step(
         "12_07_analyze_variants",
         analyze_variants,
@@ -336,8 +347,14 @@ def run_process_mining(
     )
 
     output = {
-        "dfg": dfg_result,
+        "dfg": {
+            "edges": dfg_result["edges"],
+            "start_activities": dfg_result["start_activities"],
+            "end_activities": dfg_result["end_activities"],
+            "filtering_statistics": dfg_result.get("filtering_statistics", {}),
+        },
         "stochastic_dfg": stochastic_dfg_result,
+        "filtered_dfg": filtered_dfg_result,
         "first_activity_concentration": first_activity_result,
         "wallet_variants": variant_data["wallet_variants"],
         "variants": variant_data["variants"],
