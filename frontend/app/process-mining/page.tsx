@@ -3,7 +3,7 @@
 import "@xyflow/react/dist/style.css";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ReactFlow, Background, Controls, MiniMap, Handle, Position, MarkerType, type Node, type Edge as FlowEdge, type NodeProps, type EdgeProps, BaseEdge, EdgeLabelRenderer, getBezierPath, useNodesState, useEdgesState } from "@xyflow/react";
+import { ReactFlow, Background, Controls, MiniMap, Handle, Position, MarkerType, type Node, type Edge as FlowEdge, type NodeProps, type EdgeProps, BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useNodesState, useEdgesState } from "@xyflow/react";
 import dagre from "dagre";
 import { ArrowLeft, GitBranch, Activity, Users, Repeat2, TrendingUp, Filter, Network, X } from "lucide-react";
 
@@ -22,19 +22,21 @@ function Metric({ title, value, note, icon: Icon }: { title: string; value: stri
 }
 function Empty({ text }: { text: string }) { return <div className="rounded-xl border border-dashed border-white/10 px-4 py-8 text-center text-xs leading-5 text-zinc-600">{text}</div>; }
 
-function ActivityNode({ data }: NodeProps<Node<{ title: string; incoming: number; outgoing: number; start: number; end: number }>>) {
+function ActivityNode({ data }: NodeProps<Node<{ title: string; incoming: number; outgoing: number; start: number; end: number; special?: string }>>) {
   const isSell = data.title.toLowerCase().includes("sell");
-  return <div className={`relative min-w-[174px] rounded-xl border px-4 py-3 shadow-[0_8px_25px_rgba(0,0,0,.28)] ${isSell ? "border-rose-400/80 bg-gradient-to-br from-rose-950/95 to-[#101016]" : "border-slate-600/80 bg-gradient-to-br from-slate-800/95 to-[#101016]"}`}>
-    <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-rose-300"/>
+  if (data.special) return <div className={`flex h-[66px] w-[66px] items-center justify-center rounded-full border-2 shadow-[0_0_28px_rgba(248,113,113,.12)] ${data.special === "start" ? "border-emerald-300 bg-emerald-950/70 text-emerald-200" : "border-amber-300 bg-amber-950/70 text-amber-200"}`}>
+    {data.special === "start" ? <span className="text-[10px] font-bold tracking-[.12em]">START</span> : <span className="text-[10px] font-bold tracking-[.12em]">END</span>}
+    {data.special === "start" ? <Handle type="source" position={Position.Right} className="!border-0 !bg-emerald-300"/> : <Handle type="target" position={Position.Left} className="!border-0 !bg-amber-300"/>}
+  </div>;
+  return <div className={`relative min-w-[174px] rounded-xl border px-4 py-3 shadow-[0_8px_25px_rgba(0,0,0,.28)] ${isSell ? "border-rose-400/90 bg-gradient-to-br from-rose-950/95 to-[#101016]" : "border-slate-600/80 bg-gradient-to-br from-slate-800/95 to-[#101016]"}`}>
+    <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
     <div className={`text-center text-xs font-semibold ${isSell ? "text-rose-200" : "text-slate-100"}`}>{data.title}</div>
     <div className="mt-1.5 text-center font-mono text-[10px] text-slate-400">{data.incoming.toLocaleString()} in · {data.outgoing.toLocaleString()} out</div>
-    {data.start > 0 && <div className="mt-2 text-center text-[9px] text-emerald-300">START · {data.start.toLocaleString()}</div>}
-    {data.end > 0 && <div className="mt-1 text-center text-[9px] text-amber-300">END · {data.end.toLocaleString()}</div>}
-    <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-rose-300"/>
+    <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
   </div>;
 }
 function FrequencyEdge({ id, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null }>>) {
-  const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY });
+  const [path, labelX, labelY] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, borderRadius: 12, offset: 24 });
   return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={style}/><EdgeLabelRenderer><div className="nodrag nopan pointer-events-all absolute rounded-md border border-rose-400/20 bg-[#111116] px-2 py-1 font-mono text-[10px] text-rose-100 shadow" style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? "Transition frequency" : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{(data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
 }
 const nodeTypes = { activity: ActivityNode };
@@ -43,7 +45,7 @@ const edgeTypes = { frequency: FrequencyEdge };
 function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; description: string }) {
   const [selectedItem, setSelectedItem] = useState<{ kind: "activity" | "transition"; title: string; details: Record<string, string> } | null>(null);
   const built = useMemo(() => {
-    const edges = (dfg.edges ?? []).filter((edge) => edge && typeof edge.source === "string" && typeof edge.target === "string");
+    const edges = (dfg.edges ?? []).filter((edge) => edge && typeof edge.source === "string" && typeof edge.target === "string" && edge.source !== "__START__" && edge.target !== "__END__");
     const starts = dfg.start_activities ?? {}, ends = dfg.end_activities ?? {};
     const names = new Set<string>();
     edges.forEach((edge) => { names.add(edge.source); names.add(edge.target); });
@@ -52,26 +54,48 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
     if (!names.size) return { nodes: [] as Node[], edges: [] as FlowEdge[], activityCount: 0 };
     const graph = new dagre.graphlib.Graph({ multigraph: true });
     graph.setDefaultEdgeLabel(() => ({}));
-    graph.setGraph({ rankdir: "LR", nodesep: 54, ranksep: 120, edgesep: 30, marginx: 45, marginy: 45, ranker: "network-simplex" });
+    graph.setGraph({ rankdir: "LR", nodesep: 82, ranksep: 170, edgesep: 58, marginx: 70, marginy: 60, ranker: "network-simplex", acyclicer: "greedy" });
     const activityStats = new Map<string, { incoming: number; outgoing: number }>();
     names.forEach((name) => { activityStats.set(name, { incoming: 0, outgoing: 0 }); graph.setNode(name, { width: 194, height: 82 }); });
+    graph.setNode("__START__", { width: 76, height: 76 });
+    graph.setNode("__END__", { width: 76, height: 76 });
     edges.forEach((edge, index) => {
-      const sourceStats = activityStats.get(edge.source)!; sourceStats.outgoing += edge.count;
-      const targetStats = activityStats.get(edge.target)!; targetStats.incoming += edge.count;
-      graph.setEdge(edge.source, edge.target, { weight: Math.max(1, edge.count), minlen: edge.source === edge.target ? 1 : 1 }, `edge-${index}`);
+      activityStats.get(edge.source)!.outgoing += edge.count;
+      activityStats.get(edge.target)!.incoming += edge.count;
+      graph.setEdge(edge.source, edge.target, { weight: Math.max(1, Math.sqrt(edge.count)), minlen: 1 }, `edge-${index}`);
     });
+    Object.entries(starts).forEach(([name, count], index) => {
+      if (!names.has(name)) return;
+      graph.setEdge("__START__", name, { weight: Math.max(1, Math.sqrt(number(count) ?? 1)), minlen: 1 }, `start-${index}`);
+    });
+    Object.entries(ends).forEach(([name, count], index) => {
+      if (!names.has(name)) return;
+      graph.setEdge(name, "__END__", { weight: Math.max(1, Math.sqrt(number(count) ?? 1)), minlen: 1 }, `end-${index}`);
+    });
+    // If the backend omitted boundary counts, still provide explicit process endpoints.
+    if (!Object.keys(starts).length) [...names].filter((name) => !edges.some((edge) => edge.target === name)).forEach((name, i) => graph.setEdge("__START__", name, { weight: 1 }, `auto-start-${i}`));
+    if (!Object.keys(ends).length) [...names].filter((name) => !edges.some((edge) => edge.source === name)).forEach((name, i) => graph.setEdge(name, "__END__", { weight: 1 }, `auto-end-${i}`));
     dagre.layout(graph);
-    const nodes: Node[] = [...names].map((name) => {
-      const point = graph.node(name), stats = activityStats.get(name)!;
-      return { id: name, type: "activity", position: { x: point.x - 97, y: point.y - 41 }, data: { title: name, incoming: stats.incoming, outgoing: stats.outgoing, start: number(starts[name]) ?? 0, end: number(ends[name]) ?? 0 } };
-    });
-    const flowEdges: FlowEdge[] = edges.map((edge, index) => ({
-      id: `transition-${index}-${edge.source}-${edge.target}`, source: edge.source, target: edge.target, type: "frequency",
-      markerEnd: { type: MarkerType.ArrowClosed, color: "#fb7185", width: 16, height: 16 },
-      style: { stroke: "#fb7185", strokeOpacity: .65, strokeWidth: 1.2 + Math.sqrt(Math.max(0, edge.count) / Math.max(1, ...edges.map((item) => item.count))) * 3.5 },
-      data: { count: edge.count, probability: number(edge.transition_probability ?? edge.probability) },
-      label: String(edge.count),
-    }));
+    const startPoint = graph.node("__START__"), endPoint = graph.node("__END__");
+    const nodes: Node[] = [
+      { id: "__START__", type: "activity", position: { x: startPoint.x - 38, y: startPoint.y - 38 }, data: { title: "START", incoming: 0, outgoing: Object.values(starts).reduce((sum, n) => sum + (number(n) ?? 0), 0), start: 0, end: 0, special: "start" } },
+      ...[...names].map((name) => {
+        const point = graph.node(name), stats = activityStats.get(name)!;
+        return { id: name, type: "activity", position: { x: point.x - 97, y: point.y - 41 }, data: { title: name, incoming: stats.incoming, outgoing: stats.outgoing, start: number(starts[name]) ?? 0, end: number(ends[name]) ?? 0 } };
+      }),
+      { id: "__END__", type: "activity", position: { x: endPoint.x - 38, y: endPoint.y - 38 }, data: { title: "END", incoming: Object.values(ends).reduce((sum, n) => sum + (number(n) ?? 0), 0), outgoing: 0, start: 0, end: 0, special: "end" } },
+    ];
+    const maxCount = Math.max(1, ...edges.map((item) => item.count), ...Object.values(starts).map((v) => number(v) ?? 0), ...Object.values(ends).map((v) => number(v) ?? 0));
+    const flowEdges: FlowEdge[] = [
+      ...edges.map((edge, index) => ({
+        id: `transition-${index}-${edge.source}-${edge.target}`, source: edge.source, target: edge.target, type: "frequency",
+        markerEnd: { type: MarkerType.ArrowClosed, color: "#fda4af", width: 15, height: 15 },
+        style: { stroke: "#fb7185", strokeOpacity: .72, strokeWidth: 1.1 + Math.sqrt(Math.max(0, edge.count) / maxCount) * 3 },
+        data: { count: edge.count, probability: number(edge.transition_probability ?? edge.probability) },
+      })),
+      ...Object.entries(starts).filter(([name]) => names.has(name)).map(([name, count], index) => ({ id: `start-edge-${index}`, source: "__START__", target: name, type: "frequency", markerEnd: { type: MarkerType.ArrowClosed, color: "#6ee7b7" }, style: { stroke: "#34d399", strokeOpacity: .8, strokeWidth: 1.2 + Math.sqrt((number(count) ?? 0) / maxCount) * 3 }, data: { count: number(count) ?? 0, probability: null } })),
+      ...Object.entries(ends).filter(([name]) => names.has(name)).map(([name, count], index) => ({ id: `end-edge-${index}`, source: name, target: "__END__", type: "frequency", markerEnd: { type: MarkerType.ArrowClosed, color: "#fcd34d" }, style: { stroke: "#fbbf24", strokeOpacity: .8, strokeWidth: 1.2 + Math.sqrt((number(count) ?? 0) / maxCount) * 3 }, data: { count: number(count) ?? 0, probability: null } })),
+    ];
     return { nodes, edges: flowEdges, activityCount: names.size };
   }, [dfg]);
   const [nodes, setNodes, onNodesChange] = useNodesState(built.nodes);
@@ -82,7 +106,7 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
   return <section className="overflow-hidden rounded-2xl border border-white/[.09] bg-[#0b0c10]/95">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[.07] p-5"><div className="flex items-center gap-2"><Network size={16} className="text-red-300"/><div><h3 className="text-sm font-semibold">{title}</h3><p className="mt-1 text-xs text-zinc-600">{description}</p></div></div><div className="flex gap-3 text-[10px] text-zinc-500"><span>{built.activityCount} activities</span><span>{originalEdges.length} transitions</span><span>Click node/edge for evidence</span></div></div>
     <div className="relative h-[650px] bg-[radial-gradient(ellipse_at_50%_0%,rgba(127,29,29,.09),transparent_65%)]">
-      <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} fitView fitViewOptions={{ padding: .2, minZoom: .25, maxZoom: 1.3 }} minZoom={.12} maxZoom={2} onNodeClick={(_, node) => { const d = node.data as AnyRecord; setSelectedItem({ kind: "activity", title: String(d.title ?? node.id), details: { Activity: String(d.title ?? node.id), "Incoming frequency": String(d.incoming ?? 0), "Outgoing frequency": String(d.outgoing ?? 0), "Start count": String(d.start ?? 0), "End count": String(d.end ?? 0) } }); }} onEdgeClick={(_, edge) => { const d = record(edge.data); setSelectedItem({ kind: "transition", title: `${edge.source} → ${edge.target}`, details: { Source: edge.source, Target: edge.target, "Transition frequency": String(d.count ?? edge.label ?? "—"), "Transition probability": d.probability == null ? "Not available" : `${(Number(d.probability) * 100).toFixed(2)}%` } }); }} proOptions={{ hideAttribution: true }}>
+      <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} fitView fitViewOptions={{ padding: .12, minZoom: .12, maxZoom: 1.1 }} minZoom={.12} maxZoom={2} onNodeClick={(_, node) => { const d = node.data as AnyRecord; setSelectedItem({ kind: "activity", title: String(d.title ?? node.id), details: { Activity: String(d.title ?? node.id), "Incoming frequency": String(d.incoming ?? 0), "Outgoing frequency": String(d.outgoing ?? 0), "Start count": String(d.start ?? 0), "End count": String(d.end ?? 0) } }); }} onEdgeClick={(_, edge) => { const d = record(edge.data); setSelectedItem({ kind: "transition", title: `${edge.source} → ${edge.target}`, details: { Source: edge.source, Target: edge.target, "Transition frequency": String(d.count ?? edge.label ?? "—"), "Transition probability": d.probability == null ? "Not available" : `${(Number(d.probability) * 100).toFixed(2)}%` } }); }} proOptions={{ hideAttribution: true }}>
         <Background color="#27212a" gap={24} size={1}/><Controls className="!overflow-hidden !rounded-lg !border !border-white/10 !bg-[#111116] [&>button]:!border-white/10 [&>button]:!bg-[#111116] [&>button]:!fill-zinc-300"/><MiniMap pannable zoomable nodeColor={(node) => String((node.data as AnyRecord).title ?? "").toLowerCase().includes("sell") ? "#fb7185" : "#64748b"} className="!border !border-white/10 !bg-[#0a0b10]"/>
       </ReactFlow>
       {selectedItem && <aside className="absolute right-3 top-3 z-10 w-[min(300px,calc(100%-24px))] rounded-xl border border-white/10 bg-[#0b0c10]/95 p-4 shadow-2xl backdrop-blur"><div className="flex items-start justify-between gap-3"><div><p className="text-[9px] tracking-[.2em] text-red-300">{selectedItem.kind === "activity" ? "ACTIVITY DETAILS" : "TRANSITION DETAILS"}</p><h4 className="mt-1 break-words text-sm font-semibold">{selectedItem.title}</h4></div><button onClick={() => setSelectedItem(null)} className="text-zinc-500 hover:text-white"><X size={15}/></button></div><div className="mt-4 space-y-2">{Object.entries(selectedItem.details).map(([key, value]) => <div key={key} className="flex justify-between gap-3 border-b border-white/[.06] pb-2"><span className="text-[10px] text-zinc-500">{key}</span><span className="max-w-[60%] break-all text-right font-mono text-[10px] text-zinc-200">{value}</span></div>)}</div></aside>}
@@ -108,6 +132,9 @@ export default function ProcessMiningPage() {
   const rawDfg = record(data.stochastic_dfg ?? data.dfg) as Dfg;
   const filteredDfg = record(data.filtered_dfg ?? record(data.dfg).filtered_dfg) as Dfg;
   const concentration = record(data.first_activity_concentration);
+  const concentrationBuckets = Object.entries(record(concentration.four_hour_distribution)).map(([time, count]) => ({ time, count: number(count) ?? 0 })).sort((a, b) => a.time.localeCompare(b.time));
+  const concentrationPeak = Math.max(1, ...concentrationBuckets.map((item) => item.count));
+  const concentrationStats = record(concentration.four_hour_stats);
   const intermediaries = record(data.intermediary_analysis);
   const coordinated = record(data.coordinated_intermediary_analysis);
   const seller = record(data.seller_behavior);
@@ -134,7 +161,7 @@ export default function ProcessMiningPage() {
           {rawSellEdges.length === 0 && <p className="mt-3 rounded-lg border border-white/[.07] bg-white/[.02] p-3 text-xs leading-5 text-zinc-500">No sell-related transitions were found in the raw DFG. Backend mapped {mappedSellActions.toLocaleString()} events to sell. If zero, inspect the target mint and swap token fields.</p>}
         </section>
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]"><div className="rounded-2xl border border-white/[.09] bg-[#0b0c10]/90 p-5"><div className="mb-5 flex items-center gap-2"><GitBranch size={16} className="text-red-300"/><div><h3 className="text-sm font-semibold">Most common wallet variants</h3><p className="mt-1 text-xs text-zinc-600">Repeated action sequences across wallets</p></div></div>{topVariants.length ? <div className="space-y-4">{topVariants.slice(0, 12).map((item, index) => { const row = record(item); const variant = row.variant ?? row.sequence ?? row.actions ?? row.name ?? `Variant ${index + 1}`; const count = number(row.count ?? row.wallet_count ?? row.frequency) ?? 0; return <div key={index}><div className="mb-1.5 flex items-center justify-between gap-3 text-xs"><span className="min-w-0 truncate text-zinc-300">{label(variant)}</span><span className="shrink-0 font-mono text-zinc-500">{count ? count.toLocaleString() : label(row.count ?? row.wallet_count ?? "—")}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/[.05]"><div className="h-full rounded-full bg-gradient-to-r from-red-600 to-orange-300" style={{ width: `${Math.max(3, count / maxVariant * 100)}%` }}/></div></div>; })}</div> : <Empty text="Top variant details are not present in the returned payload."/>}</div>
-          <div className="rounded-2xl border border-white/[.09] bg-[#0b0c10]/90 p-5"><div className="mb-4 flex items-center gap-2"><Activity size={16} className="text-red-300"/><div><h3 className="text-sm font-semibold">First-activity concentration</h3><p className="mt-1 text-xs text-zinc-600">Temporal concentration evidence</p></div></div>{Object.keys(concentration).length ? <div className="space-y-3">{Object.entries(concentration).filter(([, value]) => value == null || ["string", "number", "boolean"].includes(typeof value)).slice(0, 10).map(([key, value]) => <div key={key} className="flex items-start justify-between gap-4 border-b border-white/[.05] pb-2"><span className="text-xs text-zinc-500">{pretty(key)}</span><span className="max-w-[65%] break-all text-right font-mono text-xs text-zinc-200">{label(value)}</span></div>)}</div> : <Empty text="No first-activity concentration summary was returned."/>}</div></section>
+          <div className="rounded-2xl border border-white/[.09] bg-[#0b0c10]/90 p-5"><div className="mb-4 flex items-center gap-2"><Activity size={16} className="text-red-300"/><div><h3 className="text-sm font-semibold">First-activity concentration</h3><p className="mt-1 text-xs text-zinc-600">Temporal concentration evidence</p></div></div>{concentrationBuckets.length ? <><div className="mb-4 grid grid-cols-2 gap-3"><div className="rounded-lg border border-white/[.06] bg-white/[.025] p-3"><p className="text-[10px] text-zinc-500">WALLETS IN WINDOW</p><p className="mt-1 text-xl font-semibold text-white">{label(concentrationStats.wallets_in_window ?? 0)}</p></div><div className="rounded-lg border border-white/[.06] bg-white/[.025] p-3"><p className="text-[10px] text-zinc-500">PEAK 4H BUCKET</p><p className="mt-1 text-xl font-semibold text-rose-200">{label(concentrationStats.peak_count ?? concentrationPeak)}</p></div></div><div className="relative h-[230px] rounded-lg border border-white/[.06] bg-black/20 px-3 pb-8 pt-4"><div className="absolute inset-x-3 bottom-8 top-4 flex items-end gap-[3px]">{concentrationBuckets.map((bucket) => <div key={bucket.time} className="group relative flex h-full min-w-0 flex-1 items-end" title={`${bucket.time}: ${bucket.count} wallets`}><div className="w-full rounded-t-sm bg-gradient-to-t from-red-700/90 via-rose-500/80 to-orange-300/90 transition-opacity group-hover:opacity-100" style={{ height: `${Math.max(1.5, bucket.count / concentrationPeak * 100)}%`, opacity: bucket.count === concentrationPeak ? 1 : .72 }}/><div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded border border-white/10 bg-[#111116] px-2 py-1 text-[10px] text-white group-hover:block">{new Date(bucket.time).toLocaleString("en-GB", { timeZone: "UTC", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", timeZoneName: "short" })} · {bucket.count}</div></div>)}</div><div className="absolute inset-x-3 bottom-2 flex justify-between text-[9px] text-zinc-600"><span>{new Date(concentrationBuckets[0].time).toLocaleDateString("en-GB", { timeZone: "UTC", month: "short", day: "numeric" })}</span><span>4-hour buckets · UTC</span><span>{new Date(concentrationBuckets[concentrationBuckets.length - 1].time).toLocaleDateString("en-GB", { timeZone: "UTC", month: "short", day: "numeric" })}</span></div></div><p className="mt-3 text-[11px] leading-5 text-zinc-500">Each wallet contributes only its earliest recorded activity. Hover bars to inspect the number of wallets first active in each four-hour interval.</p></> : <Empty text="No first-activity time buckets were returned for this investigation."/>}</div></section>
         <section className="grid gap-4 lg:grid-cols-2">{[["Intermediary analysis", intermediaries], ["Seller behavior", seller], ["Coordinated intermediary analysis", coordinated], ["Token handoff analysis", record(data.intermediary_handoff_analysis)]].map(([title, value]) => { const obj = record(value); const rows = Object.entries(obj).filter(([, item]) => item == null || ["string", "number", "boolean"].includes(typeof item)).slice(0, 8); return <div key={String(title)} className="rounded-2xl border border-white/[.09] bg-[#0b0c10]/90 p-5"><h3 className="text-sm font-semibold">{String(title)}</h3><div className="mt-4 space-y-2">{rows.map(([key, item]) => <div key={key} className="flex items-start justify-between gap-3 border-b border-white/[.05] pb-2"><span className="text-xs text-zinc-500">{pretty(key)}</span><span className="max-w-[68%] break-all text-right font-mono text-[11px] text-zinc-300">{label(item)}</span></div>)}{!rows.length && <Empty text="No scalar summary details returned for this analysis."/>}</div></div>; })}</section>
       </>}
     </div>
