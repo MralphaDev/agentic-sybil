@@ -61,7 +61,6 @@ body {
 
 img,
 canvas,
-svg,
 video {
   max-width: 100%;
 }
