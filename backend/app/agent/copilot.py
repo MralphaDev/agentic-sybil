@@ -230,6 +230,23 @@ async def _generate_sql(question: str, context_text: str) -> tuple[str, str]:
         raise ValueError("Could not safely interpret the SQL plan.")
 
 
+def _get_tool_schema(tool: Any) -> dict[str, Any]:
+    """Read MCP tool input schemas across Python SDK model naming variants."""
+    schema = getattr(tool, "inputSchema", None)
+    if schema is None:
+        schema = getattr(tool, "input_schema", None)
+    if schema is None:
+        dump = getattr(tool, "model_dump", None)
+        if callable(dump):
+            try:
+                data = dump(by_alias=True)
+            except TypeError:
+                data = dump()
+            if isinstance(data, dict):
+                schema = data.get("inputSchema") or data.get("input_schema")
+    return schema if isinstance(schema, dict) else {}
+
+
 async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, str] | None:
     """Make at most one read-only call to the official Helius MCP server."""
     api_key = os.getenv("HELIUS_API_KEY") or settings.HELIUS_API_KEY
@@ -286,7 +303,7 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                     # parsed transaction-history action, then fall back to another compatible
                     # read-only action discovered from the live schema.
                     def schema_args(tool, action_name: str, preferred: dict[str, Any]) -> dict[str, Any] | None:
-                        schema = tool.inputSchema or {}
+                        schema = _get_tool_schema(tool)
                         properties = schema.get("properties") or {}
                         required = schema.get("required") or []
                         args: dict[str, Any] = {}
@@ -338,7 +355,7 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                         router = tool_by_name.get(router_name)
                         if not router:
                             continue
-                        schema = router.inputSchema or {}
+                        schema = _get_tool_schema(router)
                         properties = schema.get("properties") or {}
                         address_key = next((
                             key for key in properties
@@ -363,7 +380,7 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                         candidates = []
                         for tool in tools:
                             name_text = f"{tool.name} {tool.description or ''}".lower()
-                            schema = tool.inputSchema or {}
+                            schema = _get_tool_schema(tool)
                             properties = schema.get("properties") or {}
                             address_key = next((
                                 key for key in properties
