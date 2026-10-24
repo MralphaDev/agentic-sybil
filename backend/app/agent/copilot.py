@@ -259,18 +259,24 @@ async def _classify_intent(question: str) -> str:
     """Classify before any database or Helius work; output is deliberately tiny."""
     response = await _get_llm(100).ainvoke([
         SystemMessage(content=(
-            "Classify the user's intent. Return exactly one word: 'investigation' if they ask "
-            "about this token, wallets, on-chain activity, the current investigation/report, "
-            "blockchain data, or a question requiring database/RPC evidence. Return 'general' "
-            "for greetings, thanks, jokes, small talk, general programming/product questions, "
-            "or anything answerable without looking up this investigation's data. Do not perform the task."
+            "Classify the user's intent. Return exactly one word: 'lookup' if they need "
+            "specific wallet/transaction/on-chain records or fresh database/RPC evidence; "
+            "'report' if they ask about the existing investigation verdict, findings, or "
+            "interpretation that can be answered from the saved report; 'general' for "
+            "greetings, thanks, jokes, small talk, general programming/product questions, "
+            "or anything unrelated to this investigation. Do not perform the task."
         )),
         HumanMessage(content=question[:MAX_QUESTION_CHARS]),
     ])
     raw = response.content
     if isinstance(raw, list):
         raw = "".join(part.get("text", "") for part in raw if isinstance(part, dict))
-    return "investigation" if "investigation" in str(raw).strip().lower() else "general"
+    label = str(raw).strip().lower()
+    if "lookup" in label:
+        return "lookup"
+    if "report" in label:
+        return "report"
+    return "general"
 
 
 async def _answer_general_question(question: str) -> AsyncIterator[str]:
@@ -284,6 +290,26 @@ async def _answer_general_question(question: str) -> AsyncIterator[str]:
             "and do not claim to have looked up investigation data."
         )),
         HumanMessage(content=question),
+    ]):
+        content = chunk.content
+        if isinstance(content, str) and content:
+            yield _emit("token", {"content": content})
+        elif isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
+                    yield _emit("token", {"content": part["text"]})
+
+async def _answer_report_question(question: str, context_text: str) -> AsyncIterator[str]:
+    """Answer from the saved investigation context without querying data sources."""
+    yield _emit("progress", {"label": "Using the saved investigation report; no DB/RPC lookup needed", "state": "active"})
+    async for chunk in _get_llm(MAX_OUTPUT_TOKENS).astream([
+        SystemMessage(content=(
+            "You are Investigation Copilot. Answer using only the supplied saved report/context. "
+            "Be concise and direct, at most 300 output tokens. Do not query or imply you queried "
+            "PostgreSQL or Helius. Distinguish observed evidence from interpretation and mention "
+            "when the report does not contain enough evidence."
+        )),
+        HumanMessage(content=f"Saved investigation context:\n{context_text[:12000]}\n\nQuestion: {question}"),
     ]):
         content = chunk.content
         if isinstance(content, str) and content:
@@ -314,6 +340,12 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
         context_text, _ = _get_investigation_context(request.run_id)
     except HTTPException as exc:
         yield _emit("error", {"message": exc.detail})
+        yield _emit("done", {})
+        return
+
+    if intent == "report":
+        async for event in _answer_report_question(request.message, context_text):
+            yield event
         yield _emit("done", {})
         return
 
