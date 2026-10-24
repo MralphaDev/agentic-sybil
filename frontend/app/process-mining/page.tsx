@@ -21,7 +21,7 @@ function Metric({ title, value, note, icon: Icon }: { title: string; value: stri
 }
 function Empty({ text }: { text: string }) { return <div className="rounded-xl border border-dashed border-white/10 px-4 py-8 text-center text-xs leading-5 text-zinc-600">{text}</div>; }
 
-function ActivityNode({ data }: NodeProps<Node<{ title: string; incoming: number; outgoing: number; start: number; end: number; special?: string }>>) {
+function ActivityNode({ data }: NodeProps<Node<{ title: string; incoming: number; outgoing: number; start: number; end: number; special?: string; rework?: number }>>) {
   const isSell = data.title.toLowerCase().includes("sell");
   if (data.special) return <div className={`flex h-[66px] w-[66px] items-center justify-center rounded-full border-2 shadow-[0_0_28px_rgba(248,113,113,.12)] ${data.special === "start" ? "border-emerald-300 bg-emerald-950/70 text-emerald-200" : "border-amber-300 bg-amber-950/70 text-amber-200"}`}>
     {data.special === "start" ? <span className="text-[10px] font-bold tracking-[.12em]">START</span> : <span className="text-[10px] font-bold tracking-[.12em]">END</span>}
@@ -31,12 +31,18 @@ function ActivityNode({ data }: NodeProps<Node<{ title: string; incoming: number
     <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
     <div className={`text-center text-xs font-semibold ${isSell ? "text-rose-200" : "text-slate-100"}`}>{data.title}</div>
     <div className="mt-1.5 text-center font-mono text-[10px] text-slate-400">{data.incoming.toLocaleString()} in · {data.outgoing.toLocaleString()} out</div>
+    {data.rework ? <div className="mt-2 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-center text-[9px] font-semibold tracking-wide text-amber-200">↻ REWORK LOOP · {data.rework.toLocaleString()}</div> : null}
     <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
   </div>;
 }
-function FrequencyEdge({ id, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null }>>) {
-  const [path, labelX, labelY] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, borderRadius: 12, offset: 24 });
-  return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={style}/><EdgeLabelRenderer><div className="nodrag nopan pointer-events-all absolute rounded-md border border-rose-400/20 bg-[#111116] px-2 py-1 font-mono text-[10px] text-rose-100 shadow" style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? "Transition frequency" : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{(data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
+function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null }>>) {
+  const isLoop = source === target;
+  const [smoothPath, smoothX, smoothY] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, borderRadius: 18, offset: 42 });
+  const loopLift = 74 + Math.min(70, Math.sqrt(data?.count ?? 0) * 2);
+  const path = isLoop ? `M ${sourceX},${sourceY} C ${sourceX - 56},${sourceY - loopLift} ${targetX + 56},${targetY - loopLift} ${targetX},${targetY}` : smoothPath;
+  const labelX = isLoop ? (sourceX + targetX) / 2 : smoothX;
+  const labelY = isLoop ? Math.min(sourceY, targetY) - loopLift + 8 : smoothY;
+  return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={style}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${isLoop ? "border-amber-400/40 bg-amber-950 text-amber-200" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? (isLoop ? "Rework / self-loop frequency" : "Transition frequency") : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{isLoop ? `↻ ${(data?.count ?? 0).toLocaleString()}` : (data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
 }
 const nodeTypes = { activity: ActivityNode };
 const edgeTypes = { frequency: FrequencyEdge };
@@ -51,11 +57,12 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
     Object.keys(starts).forEach((name) => names.add(name));
     Object.keys(ends).forEach((name) => names.add(name));
     if (!names.size) return { nodes: [] as Node[], edges: [] as FlowEdge[], activityCount: 0 };
-    const activityStats = new Map<string, { incoming: number; outgoing: number }>();
-    names.forEach((name) => activityStats.set(name, { incoming: 0, outgoing: 0 }));
+    const activityStats = new Map<string, { incoming: number; outgoing: number; rework: number }>();
+    names.forEach((name) => activityStats.set(name, { incoming: 0, outgoing: 0, rework: 0 }));
     edges.forEach((edge) => {
       activityStats.get(edge.source)!.outgoing += edge.count;
       activityStats.get(edge.target)!.incoming += edge.count;
+      if (edge.source === edge.target) activityStats.get(edge.source)!.rework += edge.count;
     });
     const startNames = Object.keys(starts).filter((name) => names.has(name));
     const endNames = Object.keys(ends).filter((name) => names.has(name));
@@ -102,7 +109,7 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
       { id: "__START__", type: "activity", position: { x: 0, y: startY - 33 }, data: { title: "START", incoming: 0, outgoing: Object.values(starts).reduce((sum, n) => sum + (number(n) ?? 0), 0), start: 0, end: 0, special: "start" } },
       ...[...names].map((name) => {
         const point = positions.get(name) ?? { x: xGap, y: 0 }, stats = activityStats.get(name)!;
-        return { id: name, type: "activity", position: { x: point.x, y: point.y - 41 }, data: { title: name, incoming: stats.incoming, outgoing: stats.outgoing, start: number(starts[name]) ?? 0, end: number(ends[name]) ?? 0 } };
+        return { id: name, type: "activity", position: { x: point.x, y: point.y - 41 }, data: { title: name, incoming: stats.incoming, outgoing: stats.outgoing, start: number(starts[name]) ?? 0, end: number(ends[name]) ?? 0, rework: stats.rework } };
       }),
       { id: "__END__", type: "activity", position: { x: (maxRank + 1) * xGap, y: endY - 33 }, data: { title: "END", incoming: Object.values(ends).reduce((sum, n) => sum + (number(n) ?? 0), 0), outgoing: 0, start: 0, end: 0, special: "end" } },
     ];
