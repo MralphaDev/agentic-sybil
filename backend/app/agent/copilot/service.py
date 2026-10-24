@@ -250,6 +250,16 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
         except Exception as retry_exc:
             logger.warning("[Copilot] SQL retry failed: %s", str(retry_exc)[:180])
 
+    # Publish SQL rows as structured data so the frontend can render a dedicated table.
+    # Capture them before funding-trace evidence is appended to the general evidence list.
+    if sql and rows:
+        yield _emit("sql_results", {
+            "title": "SQL query results",
+            "description": f"Read-only PostgreSQL · {len(rows)} rows returned",
+            "columns": list(rows[0].keys()),
+            "rows": rows,
+        })
+
     helius_result = None
     helius_results: list[dict[str, Any]] = []
     explicit_helius_request = bool(re.search(
@@ -383,6 +393,7 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
                 "Answer the user's question directly using returned evidence. Never show or suggest SQL, "
                 "database queries, code, internal validation messages, or implementation details. "
                 "Related PostgreSQL events do not prove that the requested fact is known. Use all relevant returned sources, follow wallet addresses discovered in evidence, and distinguish missing data from a negative finding. For funding-chain questions, report each verified hop and its source. "
+                "When structured SQL results are available, the UI displays them in a separate results window. Do not reproduce the result rows as a Markdown table or dump every row into chat; summarize the important findings and refer the user to the results window for the full dataset. "
                
             )),
         ]
