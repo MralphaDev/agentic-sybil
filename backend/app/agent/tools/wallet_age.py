@@ -7,14 +7,14 @@ from app.process_mining.wallet_age_distribution.first_activity_concentration imp
     analyze_first_activity_concentration,
 )
 
-MAX_ANOMALOUS_BUCKETS = 5
+MAX_ANOMALOUS_BUCKETS = 10
 MIN_ANOMALOUS_WALLET_COUNT = 5
 ANOMALY_MEAN_MULTIPLIER = 2.0
 ROBUST_Z_THRESHOLD = 3.5
 
 
 def _select_anomalous_buckets(buckets: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Keep only a handful of clearly elevated 4-hour buckets for the LLM."""
+    """Return the ten highest-count 4-hour buckets for the LLM."""
     if not isinstance(buckets, list):
         return [], {"threshold": None, "candidate_count": 0}
 
@@ -43,23 +43,25 @@ def _select_anomalous_buckets(buckets: Any) -> tuple[list[dict[str, Any]], dict[
         mean_threshold,
     )
 
-    candidates = [
-        bucket for bucket in normalized
-        if bucket["count"] >= threshold
-    ]
-    candidates.sort(key=lambda bucket: bucket["count"], reverse=True)
-    selected = candidates[:MAX_ANOMALOUS_BUCKETS]
+    # Rank all buckets by wallet count; return only the top ten.
+    # Ties are resolved deterministically by timestamp.
+    ranked = sorted(
+        normalized,
+        key=lambda bucket: (
+            -bucket["count"],
+            str(bucket.get("timestamp", "")),
+        ),
+    )
+    selected = ranked[:MAX_ANOMALOUS_BUCKETS]
     selected.sort(key=lambda bucket: str(bucket.get("timestamp", "")))
 
     return selected, {
         "threshold": round(threshold, 2),
-        "candidate_count": len(candidates),
+        "candidate_count": sum(bucket["count"] >= threshold for bucket in normalized),
         "returned_count": len(selected),
         "selection_rule": (
-            f"count >= max({MIN_ANOMALOUS_WALLET_COUNT}, "
-            f"{ANOMALY_MEAN_MULTIPLIER}x mean, median + "
-            f"{ROBUST_Z_THRESHOLD} robust standard deviations); "
-            f"maximum {MAX_ANOMALOUS_BUCKETS} buckets"
+            f"top {MAX_ANOMALOUS_BUCKETS} buckets ranked by wallet count; "
+            "returned buckets are ordered chronologically"
         ),
     }
 
