@@ -47,9 +47,11 @@ function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY,
   });
   // A dedicated loop path keeps repeated activity visible instead of drawing
   // a zero-length edge through the activity card.
-  const loopPath = `M ${sourceX},${sourceY} C ${sourceX + 58},${sourceY - 10} ${targetX + 58},${targetY + 10} ${targetX},${targetY}`;
+  // Use a wider right-side loop so the arrowhead and count sit clear of the node.
+  const loopReach = 92;
+  const loopPath = `M ${sourceX},${sourceY} C ${sourceX + loopReach},${sourceY - 8} ${targetX + loopReach},${targetY + 8} ${targetX},${targetY}`;
   const path = selfLoop ? loopPath : normalPath;
-  const labelX = selfLoop ? Math.max(sourceX, targetX) + 48 : normalLabelX;
+  const labelX = selfLoop ? Math.max(sourceX, targetX) + loopReach + 14 : normalLabelX;
   const labelY = selfLoop ? (sourceY + targetY) / 2 : normalLabelY;
   return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...(isReciprocal ? { strokeWidth: Math.max(2, Number(style?.strokeWidth ?? 1.5)), strokeOpacity: .9 } : {}) }}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${selfLoop ? "border-amber-300/40 bg-amber-950/95 text-amber-100" : isReciprocal ? "border-sky-300/40 bg-sky-950/95 text-sky-100" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? (selfLoop ? "Self-loop / rework frequency" : "Transition frequency") : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{(data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
 }
