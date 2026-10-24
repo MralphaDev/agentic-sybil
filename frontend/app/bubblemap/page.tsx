@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, type Simulation, type SimulationLinkDatum } from "d3-force";
 import { ArrowLeft, Bot, CircleHelp, Maximize2, Minus, Network, Plus, Search, Send, X } from "lucide-react";
+import SqlResultsWindow from "@/components/copilot/sql-results-window";
 
 type AnyRecord = Record<string, unknown>;
 type SimNode = { id: string; x?: number; y?: number; vx?: number; vy?: number; fx?: number | null; fy?: number | null; [key: string]: unknown };
@@ -13,7 +14,8 @@ type GraphData = { nodes?: AnyRecord[]; edges?: AnyRecord[] };
 type GraphSummary = { data?: GraphData };
 type Payload = { analysis?: { first_fund_graph?: GraphSummary; aggregated_tx_graph?: GraphSummary; wallet_features?: Record<string, AnyRecord> } };
 type View = { x: number; y: number; k: number };
-type CopilotMessage = { role: "user" | "assistant"; content: string; progress?: string[] };
+type SqlResultsPayload = { title?: string; description?: string; columns: string[]; rows: AnyRecord[] };
+type CopilotMessage = { role: "user" | "assistant"; content: string; progress?: string[]; sqlResults?: SqlResultsPayload };
 
 const tour = [
   { title: "Welcome to the evidence map", body: "Each point is a wallet. Links show observed on-chain relationships. The force layout brings connected wallets closer together." },
@@ -64,6 +66,7 @@ export default function BubblemapPage() {
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<CopilotMessage[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
+  const [activeSqlResults, setActiveSqlResults] = useState<SqlResultsPayload | null>(null);
   const [tourStep, setTourStep] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [canvasReady, setCanvasReady] = useState(false);
@@ -287,10 +290,20 @@ export default function BubblemapPage() {
         for (const eventText of events) {
           const dataLine = eventText.split("\n").find((line) => line.startsWith("data: "));
           if (!dataLine) continue;
-          let event: { type?: string; data?: { content?: string; label?: string; message?: string } };
+          let event: { type?: string; data?: { content?: string; label?: string; message?: string; title?: string; description?: string; columns?: string[]; rows?: AnyRecord[] } };
           try { event = JSON.parse(dataLine.slice(6)); } catch { continue; }
           if (event.type === "progress" && event.data?.label) {
             updateAssistant((item) => ({ ...item, progress: [...(item.progress ?? []), event.data!.label!] }));
+          } else if (event.type === "sql_results" && event.data?.columns && event.data.rows) {
+            updateAssistant((item) => ({
+              ...item,
+              sqlResults: {
+                title: event.data!.title ?? "SQL query results",
+                description: event.data!.description ?? `${event.data!.rows!.length} rows returned`,
+                columns: event.data!.columns!,
+                rows: event.data!.rows!,
+              },
+            }));
           } else if (event.type === "token" && event.data?.content) {
             updateAssistant((item) => ({ ...item, content: item.content + event.data!.content! }));
           } else if (event.type === "error") {
@@ -389,9 +402,17 @@ export default function BubblemapPage() {
     <button onClick={() => setShowChat(true)} aria-label="Open AI analyst" className="absolute bottom-4 right-3 z-30 flex h-12 w-12 sm:bottom-5 sm:right-5 sm:h-14 sm:w-14 items-center justify-center rounded-full border border-red-300/40 bg-gradient-to-br from-red-500/30 to-[#160b10] text-red-200 shadow-[0_0_35px_rgba(239,68,68,.25)] transition hover:scale-105"><Bot size={22}/><span className="absolute inset-[-6px] rounded-full border border-red-400/15 animate-ping"/></button>
     <AnimatePresence>{showChat && <motion.aside initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 30 }} className="absolute bottom-[4.5rem] right-3 z-40 flex h-[min(500px,calc(100dvh-6rem))] max-h-[calc(100dvh-6rem)] min-h-0 w-[min(370px,calc(100vw-1.5rem))] flex-col overflow-hidden sm:bottom-24 sm:right-5 sm:h-[min(500px,62dvh)] sm:max-h-[calc(100dvh-8rem)] sm:w-[min(370px,calc(100vw-2.5rem))] rounded-2xl border border-red-400/20 bg-[#0b0c11]/95 shadow-2xl backdrop-blur-xl">
       <div className="flex shrink-0 items-center gap-3 border-b border-white/[.08] p-3 sm:p-4"><div className="flex h-9 w-9 items-center justify-center rounded-full border border-red-400/30 bg-red-500/10 text-red-300"><Bot size={17}/></div><div className="flex-1"><p className="text-sm font-semibold">Investigation copilot</p><p className="mt-0.5 text-[9px] text-emerald-300">{chatBusy ? "CONNECTED · ANALYZING" : "CONNECTED · READ-ONLY"}</p></div><button onClick={() => setShowChat(false)} className="text-zinc-500 hover:text-white"><X size={16}/></button></div>
-      <div className="min-h-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto overscroll-contain p-3 sm:p-4"><div className="max-w-[90%] rounded-xl border border-white/[.07] bg-white/[.035] p-3 text-xs leading-5 text-zinc-400">Ask about wallet activity, funding patterns, transaction history, or the current investigation verdict. PostgreSQL is queried first; read-only Helius RPC is used as a fallback.</div>{chatMessages.map((message, index) => <div key={index} className={message.role === "user" ? "ml-auto min-w-0 max-w-[88%] break-words [overflow-wrap:anywhere] rounded-xl border border-red-400/20 bg-red-500/[.09] p-3 text-xs text-zinc-200" : "mr-auto min-w-0 max-w-[94%] break-words [overflow-wrap:anywhere] rounded-xl border border-white/[.08] bg-white/[.035] p-3 text-xs leading-5 text-zinc-200"}>{message.content && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>}{message.role === "assistant" && message.progress && message.progress.length > 0 && <div className="mt-2 space-y-1 border-t border-white/[.07] pt-2">{message.progress.map((item, progressIndex) => <div key={progressIndex} className="flex items-start gap-2 text-[10px] text-zinc-500"><span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-emerald-400"/><span>{item}</span></div>)}</div>}{message.role === "assistant" && chatBusy && index === chatMessages.length - 1 && <span className="mt-2 inline-block h-3 w-1 animate-pulse bg-red-300/80"/>}</div>)}</div>
+      <div className="min-h-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto overscroll-contain p-3 sm:p-4"><div className="max-w-[90%] rounded-xl border border-white/[.07] bg-white/[.035] p-3 text-xs leading-5 text-zinc-400">Ask about wallet activity, funding patterns, transaction history, or the current investigation verdict. PostgreSQL is queried first; read-only Helius RPC is used as a fallback.</div>{chatMessages.map((message, index) => <div key={index} className={message.role === "user" ? "ml-auto min-w-0 max-w-[88%] break-words [overflow-wrap:anywhere] rounded-xl border border-red-400/20 bg-red-500/[.09] p-3 text-xs text-zinc-200" : "mr-auto min-w-0 max-w-[94%] break-words [overflow-wrap:anywhere] rounded-xl border border-white/[.08] bg-white/[.035] p-3 text-xs leading-5 text-zinc-200"}>{message.content && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>}{message.role === "assistant" && message.sqlResults && <button type="button" onClick={() => setActiveSqlResults(message.sqlResults ?? null)} className="mt-3 flex w-full items-center justify-between gap-3 rounded-lg border border-red-400/20 bg-red-500/[.07] px-3 py-2.5 text-left transition hover:border-red-300/40 hover:bg-red-500/[.12]"><span className="min-w-0"><span className="block text-[11px] font-medium text-red-100">Open SQL results</span><span className="mt-0.5 block text-[10px] text-zinc-500">{message.sqlResults.rows.length.toLocaleString()} rows · sortable table · CSV export</span></span><span aria-hidden="true" className="text-sm text-red-200">↗</span></button>}{message.role === "assistant" && message.progress && message.progress.length > 0 && <div className="mt-2 space-y-1 border-t border-white/[.07] pt-2">{message.progress.map((item, progressIndex) => <div key={progressIndex} className="flex items-start gap-2 text-[10px] text-zinc-500"><span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-emerald-400"/><span>{item}</span></div>)}</div>}{message.role === "assistant" && chatBusy && index === chatMessages.length - 1 && <span className="mt-2 inline-block h-3 w-1 animate-pulse bg-red-300/80"/>}</div>)}</div>
       <form onSubmit={(event) => { event.preventDefault(); void sendMessage(); }} className="flex gap-2 border-t border-white/[.08] p-3"><input value={chatInput} onChange={(event) => setChatInput(event.target.value)} disabled={chatBusy} placeholder="Ask about this network…" className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-xs outline-none focus:border-red-400/40 disabled:opacity-50"/><button disabled={chatBusy || !chatInput.trim()} className="rounded-lg bg-red-500/15 px-3 text-red-200 hover:bg-red-500/25 disabled:opacity-40" aria-label="Send message"><Send size={15}/></button></form>
     </motion.aside>}</AnimatePresence>
+    <SqlResultsWindow
+      open={activeSqlResults !== null}
+      title={activeSqlResults?.title}
+      description={activeSqlResults?.description}
+      columns={activeSqlResults?.columns ?? []}
+      rows={activeSqlResults?.rows ?? []}
+      onClose={() => setActiveSqlResults(null)}
+    />
     <AnimatePresence>{tourStep !== null && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-50 flex items-center justify-center bg-black/65 p-5 backdrop-blur-sm"><motion.div initial={{ scale: .94, y: 12 }} animate={{ scale: 1, y: 0 }} className="w-full max-w-md rounded-2xl border border-red-400/25 bg-[#0b0c11] p-6 shadow-[0_0_80px_rgba(127,29,29,.18)]"><div className="mb-4 flex items-center justify-between"><span className="text-[9px] tracking-[.22em] text-red-300">FIELD GUIDE / {String(tourStep + 1).padStart(2, "0")}</span><button onClick={finishTour} className="text-xs text-zinc-500 hover:text-white">Skip tour</button></div><h2 className="text-xl font-semibold">{tour[tourStep].title}</h2><p className="mt-3 text-sm leading-6 text-zinc-400">{tour[tourStep].body}</p><div className="mt-6 flex items-center justify-between"><div className="flex gap-1.5">{tour.map((_, index) => <span key={index} className={`h-1 w-6 rounded-full ${index <= tourStep ? "bg-red-400" : "bg-white/10"}`}/>)}</div><button onClick={() => tourStep === tour.length - 1 ? finishTour() : setTourStep(tourStep + 1)} className="rounded-xl bg-red-500/15 px-4 py-2.5 text-xs font-medium text-red-100 hover:bg-red-500/25">{tourStep === tour.length - 1 ? "Start exploring" : "Continue"}</button></div></motion.div></motion.div>}</AnimatePresence>
   </main>;
 }
