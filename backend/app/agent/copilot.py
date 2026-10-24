@@ -243,10 +243,15 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
     else:
         command = "npx"
         args = ["-y", "helius-mcp@latest"]
+    child_env = dict(os.environ)
+    # Avoid passing a None value to the subprocess environment when the key is
+    # provided through the Helius user's config file instead of an env variable.
+    if api_key:
+        child_env["HELIUS_API_KEY"] = api_key
     params = StdioServerParameters(
         command=command,
         args=args,
-        env={**os.environ, "HELIUS_API_KEY": api_key},
+        env=child_env,
     )
     try:
         async with asyncio.timeout(40):
@@ -282,7 +287,7 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                         properties = schema.get("properties") or {}
                         required = schema.get("required") or []
                         args: dict[str, Any] = {}
-                        if "action" in properties:
+                        if "action" in properties and action_name:
                             args["action"] = action_name
                         for key, value in preferred.items():
                             if key in properties:
@@ -354,7 +359,8 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                             for key in properties:
                                 if re.search(r"^(limit|max_results|page_size)$", key, re.I):
                                     preferred[key] = min(50, int(properties[key].get("maximum", 50)))
-                            args = schema_args(tool, "", preferred)
+                            inferred_action = "getTransactionHistory" if "action" in properties and "transaction" in name_text else ""
+                            args = schema_args(tool, inferred_action, preferred)
                             if args is not None:
                                 score = 5 if "transaction" in name_text else 0
                                 score += 4 if "history" in name_text else 0
