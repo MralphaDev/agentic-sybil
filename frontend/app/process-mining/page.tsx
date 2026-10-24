@@ -35,14 +35,32 @@ function ActivityNode({ data }: NodeProps<Node<{ title: string; incoming: number
     <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
   </div>;
 }
-function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null }>>) {
+function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null; reciprocal?: boolean }>>) {
   const isLoop = source === target;
-  const [smoothPath, smoothX, smoothY] = getBezierPath({ sourceX, sourceY, targetX, targetY, curvature: .28 });
-  const loopLift = 74 + Math.min(70, Math.sqrt(data?.count ?? 0) * 2);
-  const path = isLoop ? `M ${sourceX},${sourceY} C ${sourceX - 56},${sourceY - loopLift} ${targetX + 56},${targetY - loopLift} ${targetX},${targetY}` : smoothPath;
-  const labelX = isLoop ? (sourceX + targetX) / 2 : smoothX;
-  const labelY = isLoop ? Math.min(sourceY, targetY) - loopLift + 8 : smoothY;
-  return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={style}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${isLoop ? "border-amber-400/40 bg-amber-950 text-amber-200" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? (isLoop ? "Rework / self-loop frequency" : "Transition frequency") : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{isLoop ? `↻ ${(data?.count ?? 0).toLocaleString()}` : (data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
+  const isReciprocal = Boolean(data?.reciprocal) && !isLoop;
+  const [smoothPath, smoothX, smoothY] = getBezierPath({ sourceX, sourceY, targetX, targetY, curvature: .34 });
+  const loopLift = 92 + Math.min(110, Math.sqrt(data?.count ?? 0) * 3);
+  let path = smoothPath, labelX = smoothX, labelY = smoothY;
+  if (isLoop) {
+    // Route well outside the node on both sides so the self-loop is a visible arc,
+    // not a tiny curve or a label sitting on top of the activity.
+    const direction = sourceX >= targetX ? 1 : -1;
+    const outward = 86 + Math.min(44, Math.sqrt(data?.count ?? 0) * 1.5);
+    path = `M ${sourceX},${sourceY} C ${sourceX + direction * outward},${sourceY - loopLift} ${targetX - direction * outward},${targetY - loopLift} ${targetX},${targetY}`;
+    labelX = (sourceX + targetX) / 2;
+    labelY = Math.min(sourceY, targetY) - loopLift + 5;
+  } else if (isReciprocal) {
+    // Opposite directions take separate upper/lower arcs, never crossing at the center.
+    const dx = targetX - sourceX;
+    const dy = targetY - sourceY;
+    const offset = (sourceX < targetX ? -1 : 1) * (78 + Math.min(52, Math.sqrt(data?.count ?? 0) * 1.5));
+    const c1x = sourceX + dx * .34, c2x = sourceX + dx * .66;
+    const c1y = sourceY + dy * .34 + offset, c2y = sourceY + dy * .66 + offset;
+    path = `M ${sourceX},${sourceY} C ${c1x},${c1y} ${c2x},${c2y} ${targetX},${targetY}`;
+    labelX = (sourceX + targetX) / 2;
+    labelY = (sourceY + targetY) / 2 + offset;
+  }
+  return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...(isLoop ? { stroke: "#fbbf24", strokeWidth: Math.max(2.8, Number(style?.strokeWidth ?? 2)), strokeOpacity: .98 } : isReciprocal ? { strokeWidth: Math.max(2, Number(style?.strokeWidth ?? 1.5)), strokeOpacity: .9 } : {}) }}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${isLoop ? "border-amber-300/70 bg-amber-950 text-amber-100" : isReciprocal ? "border-sky-300/40 bg-sky-950/95 text-sky-100" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? (isLoop ? "Rework / self-loop frequency" : "Transition frequency") : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{isLoop ? `↻ ${(data?.count ?? 0).toLocaleString()}` : (data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
 }
 const nodeTypes = { activity: ActivityNode };
 const edgeTypes = { frequency: FrequencyEdge };
@@ -119,7 +137,7 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
         id: `transition-${index}-${edge.source}-${edge.target}`, source: edge.source, target: edge.target, type: "frequency",
         markerEnd: { type: MarkerType.ArrowClosed, color: "#fda4af", width: 15, height: 15 },
         style: { stroke: "#fb7185", strokeOpacity: .72, strokeWidth: 1.1 + Math.sqrt(Math.max(0, edge.count) / maxCount) * 3 },
-        data: { count: edge.count, probability: number(edge.transition_probability ?? edge.probability) },
+        data: { count: edge.count, probability: number(edge.transition_probability ?? edge.probability), reciprocal: edges.some((other) => other.source === edge.target && other.target === edge.source) },
       })),
       ...Object.entries(starts).filter(([name]) => names.has(name)).map(([name, count], index) => ({ id: `start-edge-${index}`, source: "__START__", target: name, type: "frequency", markerEnd: { type: MarkerType.ArrowClosed, color: "#6ee7b7" }, style: { stroke: "#34d399", strokeOpacity: .8, strokeWidth: 1.2 + Math.sqrt((number(count) ?? 0) / maxCount) * 3 }, data: { count: number(count) ?? 0, probability: null } })),
       ...Object.entries(ends).filter(([name]) => names.has(name)).map(([name, count], index) => ({ id: `end-edge-${index}`, source: name, target: "__END__", type: "frequency", markerEnd: { type: MarkerType.ArrowClosed, color: "#fcd34d" }, style: { stroke: "#fbbf24", strokeOpacity: .8, strokeWidth: 1.2 + Math.sqrt((number(count) ?? 0) / maxCount) * 3 }, data: { count: number(count) ?? 0, probability: null } })),
