@@ -13,6 +13,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from app.agent.sse_manager import encode_sse, get_run
+from app.agent.helius_routing import is_helius_tool_error, select_wallet_action
 from app.core.config import ENV_FILE, settings
 from app.database.connection import get_connection
 
@@ -364,19 +365,7 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                     # Route wallet-specific questions to the relevant read-only Wallet API
                     # action. Keep transaction history as the default when no clearer intent
                     # is expressed; never expose wallet-write actions through this fallback.
-                    q = question.lower()
-                    if re.search(r"\b(identity|who owns|owner of|label|exchange|known wallet|wallet label)\b", q):
-                        wallet_action = "getWalletIdentity"
-                    elif re.search(r"\b(funded by|funding source|first fund|who funded|funding wallet)\b", q):
-                        wallet_action = "getWalletFundedBy"
-                    elif re.search(r"\b(transfers?|sent|received|counterpart(y|ies)|inbound|outbound)\b", q):
-                        wallet_action = "getWalletTransfers"
-                    elif re.search(r"\b(token balances?|spl balances?|token holdings?|holdings|portfolio|usd value|asset balances?)\b", q):
-                        wallet_action = "getWalletBalances" if re.search(r"\b(portfolio|usd value|total value)\b", q) else "getTokenBalances"
-                    elif re.search(r"\b(sol balance|native balance|how much sol|sol amount|wallet balance|balance of)\b", q):
-                        wallet_action = "getBalance"
-                    else:
-                        wallet_action = "getWalletHistory"
+                    wallet_action = select_wallet_action(question)
 
                     preferred_router_order = (
                         [("heliuswallet", wallet_action)]
@@ -535,10 +524,8 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                     )
                     # Some Helius MCP server versions wrap validation failures in a
                     # text content block while leaving the MCP-level isError flag false.
-                    returned_validation_error = bool(
-                        re.search(r"MCP error -\\d+|Input validation error|Invalid arguments for tool", serialized, re.I)
-                    )
-                    if is_error or returned_validation_error:
+                    returned_validation_error = is_helius_tool_error(serialized, is_error)
+                    if returned_validation_error:
                         detail = serialized[:5000]
                         logger.error(
                             "[Helius MCP] Tool returned isError=true; tool=%s action=%s result=%s",
