@@ -159,7 +159,7 @@ def analyze_first_activity_concentration(
             "share_of_all_wallets": round(
                 window_wallets / total_wallets, 6
             ) if total_wallets else 0.0,
-            "nonempty_buckets": int(len(counts)),
+            "nonempty_buckets": int((counts > 0).sum()),
             "peak_bucket": peak_bucket.isoformat(),  # type: ignore
             "peak_count": peak_count,
             "peak_share_within_window": round(
