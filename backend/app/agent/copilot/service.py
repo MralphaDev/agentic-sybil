@@ -7,7 +7,7 @@ from typing import Any, AsyncIterator
 from fastapi import HTTPException
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.agent.copilot.common import logger, MAX_HELIUS_CALLS, MAX_OUTPUT_TOKENS, MAX_QUESTION_CHARS, MAX_ROWS, _emit, _get_llm
-from app.agent.copilot.database import _generate_sql, _get_investigation_context, _lookup_wallet_direct, _lookup_wallet_funding_evidence, _run_readonly_query, _validate_sql
+from app.agent.copilot.database import _generate_sql, _get_investigation_context, _lookup_top_token_sellers, _lookup_wallet_direct, _lookup_wallet_funding_evidence, _run_readonly_query, _validate_sql
 from app.agent.copilot.helius import _helius_mcp_fallback
 from app.agent.copilot.models import CopilotRequest
 from app.agent.copilot.prompts import COPILOT_SYSTEM
@@ -144,9 +144,33 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
         r"(?<![1-9A-HJ-NP-Za-km-z])([1-9A-HJ-NP-Za-km-z]{32,44})(?![1-9A-HJ-NP-Za-km-z])",
         request.message,
     )
-    wallet_address = wallet_match.group(1) if wallet_match else None
+    extracted_address = wallet_match.group(1) if wallet_match else None
+    # A mint address in a "who sold this token?" question is not a wallet address.
+    # Route this common database question to a deterministic aggregate query.
+    token_seller_query = bool(
+        extracted_address
+        and re.search(r"\\b(sell|sold|seller|selling|sell off|dumped)\\b", request.message, re.IGNORECASE)
+        and re.search(r"\\b(wallets?|token|mint|coin|holders?)\\b", request.message, re.IGNORECASE)
+    )
+    wallet_address = None if token_seller_query else extracted_address
     database_has_transaction_rows = False
-    if wallet_address:
+    if token_seller_query:
+        yield _emit("progress", {"label": "Finding wallets that sold this token in PostgreSQL", "state": "active"})
+        try:
+            rows = await asyncio.to_thread(_lookup_top_token_sellers, extracted_address, 5)
+            database_has_transaction_rows = bool(rows)
+            # If the deterministic lookup finds no rows, let the general SQL planner
+            # try alternate interpretations of how this ingestor records token mints.
+            if not rows:
+                sql, reason = await _generate_sql(request.message, context_text)
+                if sql:
+                    safe_sql = _validate_sql(sql)
+                    yield _emit("progress", {"label": reason[:100], "state": "active"})
+                    rows = await asyncio.to_thread(_run_readonly_query, safe_sql)
+                    database_has_transaction_rows = bool(rows)
+        except Exception as exc:
+            sql_error = f"Token seller lookup failed: {type(exc).__name__}: {str(exc)[:180]}"
+    elif wallet_address:
         # Do not ask an LLM to construct the most important wallet lookup query.
         # Exact parameterized queries avoid schema hallucinations and address mismatches.
         yield _emit("progress", {"label": "Looking up the exact wallet address in PostgreSQL", "state": "active"})
@@ -259,8 +283,10 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
             helius_result = (last["tool"], last["result"])
     else:
         database_has_transaction_rows = bool(rows) or database_has_transaction_rows
-        if explicit_helius_request or wallet_address or not database_has_transaction_rows:
-            label = "Calling Helius MCP for live on-chain evidence" if explicit_helius_request else "Cross-checking wallet evidence with Helius" if wallet_address else "Database has no sufficient matching rows; checking Helius RPC"
+        # Empty database results are not, by themselves, a reason to call Helius.
+        # Helius is useful when explicitly requested or when resolving a specific wallet.
+        if explicit_helius_request or wallet_address:
+            label = "Calling Helius MCP for live on-chain evidence" if explicit_helius_request else "Cross-checking wallet evidence with Helius"
             yield _emit("progress", {"label": label, "state": "active"})
             helius_task = asyncio.create_task(_helius_mcp_fallback(request.message, context_text))
             try:
