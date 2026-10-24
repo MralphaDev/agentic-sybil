@@ -21,7 +21,7 @@ function Metric({ title, value, note, icon: Icon }: { title: string; value: stri
 }
 function Empty({ text }: { text: string }) { return <div className="rounded-xl border border-dashed border-white/10 px-4 py-8 text-center text-xs leading-5 text-zinc-600">{text}</div>; }
 
-function ActivityNode({ data }: NodeProps<Node<{ title: string; incoming: number; outgoing: number; start: number; end: number; special?: string; rework?: number }>>) {
+function ActivityNode({ data }: NodeProps<Node<{ title: string; incoming: number; outgoing: number; start: number; end: number; special?: string }>>) {
   const isSell = data.title.toLowerCase().includes("sell");
   if (data.special) return <div className={`flex h-[66px] w-[66px] items-center justify-center rounded-full border-2 shadow-[0_0_28px_rgba(248,113,113,.12)] ${data.special === "start" ? "border-emerald-300 bg-emerald-950/70 text-emerald-200" : "border-amber-300 bg-amber-950/70 text-amber-200"}`}>
     {data.special === "start" ? <span className="text-[10px] font-bold tracking-[.12em]">START</span> : <span className="text-[10px] font-bold tracking-[.12em]">END</span>}
@@ -31,25 +31,14 @@ function ActivityNode({ data }: NodeProps<Node<{ title: string; incoming: number
     <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
     <div className={`text-center text-xs font-semibold ${isSell ? "text-rose-200" : "text-slate-100"}`}>{data.title}</div>
     <div className="mt-1.5 text-center font-mono text-[10px] text-slate-400">{data.incoming.toLocaleString()} in · {data.outgoing.toLocaleString()} out</div>
-    {data.rework ? <div className="mt-2 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-center text-[9px] font-semibold tracking-wide text-amber-200">↻ REWORK LOOP · {data.rework.toLocaleString()}</div> : null}
     <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
   </div>;
 }
 function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null; reciprocal?: boolean }>>) {
-  const isLoop = source === target;
-  const isReciprocal = Boolean(data?.reciprocal) && !isLoop;
+  const isReciprocal = Boolean(data?.reciprocal);
   const [smoothPath, smoothX, smoothY] = getBezierPath({ sourceX, sourceY, targetX, targetY, curvature: .34 });
-  const loopLift = 38 + Math.min(32, Math.sqrt(data?.count ?? 0) * 1.2);
   let path = smoothPath, labelX = smoothX, labelY = smoothY;
-  if (isLoop) {
-    // Route well outside the node on both sides so the self-loop is a visible arc,
-    // not a tiny curve or a label sitting on top of the activity.
-    const direction = sourceX >= targetX ? 1 : -1;
-    const outward = 34 + Math.min(18, Math.sqrt(data?.count ?? 0) * .7);
-    path = `M ${sourceX},${sourceY} C ${sourceX + direction * outward},${sourceY - loopLift} ${targetX - direction * outward},${targetY - loopLift} ${targetX},${targetY}`;
-    labelX = (sourceX + targetX) / 2;
-    labelY = Math.min(sourceY, targetY) - loopLift + 5;
-  } else if (isReciprocal) {
+  if (isReciprocal) {
     // Opposite directions take separate upper/lower arcs, never crossing at the center.
     const dx = targetX - sourceX;
     const dy = targetY - sourceY;
@@ -60,7 +49,7 @@ function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY,
     labelX = (sourceX + targetX) / 2;
     labelY = (sourceY + targetY) / 2 + offset;
   }
-  return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...(isLoop ? { stroke: "#fbbf24", strokeWidth: Math.max(2.8, Number(style?.strokeWidth ?? 2)), strokeOpacity: .98 } : isReciprocal ? { strokeWidth: Math.max(2, Number(style?.strokeWidth ?? 1.5)), strokeOpacity: .9 } : {}) }}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${isLoop ? "border-amber-300/70 bg-amber-950 text-amber-100" : isReciprocal ? "border-sky-300/40 bg-sky-950/95 text-sky-100" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? (isLoop ? "Rework / self-loop frequency" : "Transition frequency") : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{isLoop ? `↻ ${(data?.count ?? 0).toLocaleString()}` : (data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
+  return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...(isReciprocal ? { strokeWidth: Math.max(2, Number(style?.strokeWidth ?? 1.5)), strokeOpacity: .9 } : {}) }}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${isReciprocal ? "border-sky-300/40 bg-sky-950/95 text-sky-100" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? (isLoop ? "Rework / self-loop frequency" : "Transition frequency") : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{(data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
 }
 const nodeTypes = { activity: ActivityNode };
 const edgeTypes = { frequency: FrequencyEdge };
@@ -68,7 +57,7 @@ const edgeTypes = { frequency: FrequencyEdge };
 function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; description: string }) {
   const [selectedItem, setSelectedItem] = useState<{ kind: "activity" | "transition"; title: string; details: Record<string, string> } | null>(null);
   const built = useMemo(() => {
-    const edges = (dfg.edges ?? []).filter((edge) => edge && typeof edge.source === "string" && typeof edge.target === "string" && edge.source !== "__START__" && edge.target !== "__END__");
+    const edges = (dfg.edges ?? []).filter((edge) => edge && typeof edge.source === "string" && typeof edge.target === "string" && edge.source !== "__START__" && edge.target !== "__END__" && edge.source !== edge.target);
     const starts = dfg.start_activities ?? {}, ends = dfg.end_activities ?? {};
     const names = new Set<string>();
     edges.forEach((edge) => { names.add(edge.source); names.add(edge.target); });
