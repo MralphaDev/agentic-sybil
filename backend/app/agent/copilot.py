@@ -129,6 +129,52 @@ def _run_readonly_query(sql: str) -> list[dict[str, Any]]:
                 ]
 
 
+def _lookup_wallet_direct(wallet_address: str) -> dict[str, Any]:
+    """Deterministically look up a specific wallet without LLM-generated SQL."""
+    with get_connection() as conn:
+        with conn.transaction():
+            conn.execute("SET TRANSACTION READ ONLY")
+            conn.execute(f"SET LOCAL statement_timeout = '{SQL_TIMEOUT_MS}ms'")
+
+            profile_cursor = conn.execute(
+                """
+                SELECT wallet_address, is_contract, is_exchange, forensic_status,
+                       first_active_time, first_fund_time, first_fund_amount,
+                       first_fund_token, first_funder, total_tx_count,
+                       in_degree, out_degree, processed_at, updated_at
+                FROM public.wallet_profiles
+                WHERE wallet_address = %s
+                LIMIT 1
+                """,
+                (wallet_address,),
+            )
+            profile_columns = [column.name for column in profile_cursor.description or []]
+            profile_row = profile_cursor.fetchone()
+            profile = (
+                {column: _json_safe(value) for column, value in zip(profile_columns, profile_row)}
+                if profile_row else None
+            )
+
+            event_cursor = conn.execute(
+                """
+                SELECT wallet_address, signature, type, translated_type, event_time,
+                       from_user_address, to_user_address, kind, from_token, from_amount,
+                       to_token, to_amount, protocol, direction, amount, mint
+                FROM public.wallet_event_log
+                WHERE wallet_address = %s
+                ORDER BY event_time DESC NULLS LAST
+                LIMIT %s
+                """,
+                (wallet_address, MAX_ROWS),
+            )
+            event_columns = [column.name for column in event_cursor.description or []]
+            events = [
+                {column: _json_safe(value) for column, value in zip(event_columns, row)}
+                for row in event_cursor.fetchall()
+            ]
+            return {"wallet_profile": profile, "recent_events": events}
+
+
 def _json_safe(value: Any) -> Any:
     if hasattr(value, "isoformat"):
         return value.isoformat()
@@ -355,19 +401,38 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
         return
 
     yield _emit("progress", {"label": "Reading investigation report", "state": "active"})
-    yield _emit("progress", {"label": "Planning a read-only PostgreSQL query", "state": "active"})
 
     sql = ""
     rows: list[dict[str, Any]] = []
     sql_error = None
-    try:
-        sql, reason = await _generate_sql(request.message, context_text)
-        if sql:
-            safe_sql = _validate_sql(sql)
-            yield _emit("progress", {"label": reason[:100], "state": "active"})
-            rows = await asyncio.to_thread(_run_readonly_query, safe_sql)
-    except Exception as exc:
-        sql_error = str(exc)[:240]
+    wallet_match = re.search(
+        r"(?<![1-9A-HJ-NP-Za-km-z])([1-9A-HJ-NP-Za-km-z]{32,44})(?![1-9A-HJ-NP-Za-km-z])",
+        request.message,
+    )
+    wallet_address = wallet_match.group(1) if wallet_match else None
+    database_has_transaction_rows = False
+    if wallet_address:
+        # Do not ask an LLM to construct the most important wallet lookup query.
+        # Exact parameterized queries avoid schema hallucinations and address mismatches.
+        yield _emit("progress", {"label": "Looking up the exact wallet address in PostgreSQL", "state": "active"})
+        try:
+            direct_data = await asyncio.to_thread(_lookup_wallet_direct, wallet_address)
+            database_has_transaction_rows = bool(direct_data["recent_events"])
+            if direct_data["wallet_profile"] is not None or direct_data["recent_events"]:
+                rows = [{"wallet_profile": direct_data["wallet_profile"], "recent_events": direct_data["recent_events"]}]
+        except Exception as exc:
+            sql_error = f"Direct wallet lookup failed: {type(exc).__name__}: {str(exc)[:180]}"
+    else:
+        yield _emit("progress", {"label": "Planning a read-only PostgreSQL query", "state": "active"})
+        try:
+            sql, reason = await _generate_sql(request.message, context_text)
+            if sql:
+                safe_sql = _validate_sql(sql)
+                yield _emit("progress", {"label": reason[:100], "state": "active"})
+                rows = await asyncio.to_thread(_run_readonly_query, safe_sql)
+                database_has_transaction_rows = bool(rows)
+        except Exception as exc:
+            sql_error = str(exc)[:240]
 
     helius_result = None
     # Explicit Helius/live-RPC requests must call Helius even when PostgreSQL has
@@ -378,7 +443,7 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
         request.message,
         re.IGNORECASE,
     ))
-    if explicit_helius_request or not rows:
+    if explicit_helius_request or not database_has_transaction_rows:
         label = (
             "Calling Helius MCP for live on-chain evidence"
             if explicit_helius_request
