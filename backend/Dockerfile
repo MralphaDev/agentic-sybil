@@ -1,13 +1,13 @@
+FROM node:22-bookworm-slim AS node-runtime
+
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-# Helius MCP is launched via npx from the Python backend.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends nodejs npm \
-    && rm -rf /var/lib/apt/lists/*
+# Copy Node.js 22 + npm/npx for the Helius MCP stdio server.
+COPY --from=node-runtime /usr/local/ /usr/local/
 
 WORKDIR /app/backend
 
