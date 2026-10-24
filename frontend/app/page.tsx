@@ -184,7 +184,7 @@ export default function Home() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, ease: easeOut }}
       >
-        <nav className="mx-auto flex h-[72px] max-w-[1400px] items-center justify-between px-6 lg:px-12">
+        <nav className="mx-auto flex min-h-[72px] max-w-[1400px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:h-[72px] lg:flex-nowrap lg:px-12 lg:py-0">
           <Link href="/" className="group flex items-center gap-3">
             <motion.div
               whileHover={
@@ -209,7 +209,7 @@ export default function Home() {
               </svg>
             </motion.div>
 
-            <span className="text-sm font-bold tracking-[0.2em]">
+            <span className="text-xs font-bold tracking-[0.12em] sm:text-sm sm:tracking-[0.2em]">
               SYBIL<span className="text-red-400">TRACE</span>
             </span>
           </Link>
@@ -242,7 +242,7 @@ export default function Home() {
               event.preventDefault();
               beginTransition();
             }}
-            className="group inline-flex items-center gap-2 rounded-md bg-white px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-zinc-200"
+            className="group inline-flex shrink-0 items-center gap-1.5 rounded-md bg-white px-3 py-2.5 text-xs font-semibold text-black transition hover:bg-zinc-200 sm:gap-2 sm:px-4 sm:text-sm"
           >
             Run Investigation
             <motion.span
@@ -257,7 +257,7 @@ export default function Home() {
       </motion.header>
 
       {/* Hero */}
-      <section className="relative z-10 mx-auto grid min-h-[calc(100svh-72px)] max-w-[1400px] items-center gap-16 px-6 py-20 lg:grid-cols-[1.05fr_0.95fr] lg:px-12 lg:py-24">
+      <section className="relative z-10 mx-auto grid min-h-[calc(100svh-72px)] min-w-0 max-w-[1400px] items-center gap-8 overflow-hidden px-4 py-12 sm:gap-12 sm:px-6 sm:py-16 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:px-12 lg:py-24">
         {/* Hero copy */}
         <motion.div
           className="max-w-2xl"
@@ -290,7 +290,7 @@ export default function Home() {
 
           <motion.h1
             variants={heroItem}
-            className="text-5xl leading-[1.06] font-semibold tracking-[-0.055em] sm:text-6xl lg:text-7xl"
+            className="text-[clamp(2.35rem,8vw,3.75rem)] leading-[1.06] font-semibold tracking-[-0.055em] sm:text-6xl lg:text-7xl"
           >
             Follow the
             <br />
@@ -386,7 +386,7 @@ export default function Home() {
 
         {/* Agent terminal visual */}
         <motion.div
-          className="relative flex items-center justify-center py-8 lg:py-0"
+          className="relative flex min-w-0 items-center justify-center overflow-hidden py-8 sm:py-10 lg:overflow-visible lg:py-0"
           initial={
             reduceMotion
               ? false
@@ -411,7 +411,7 @@ export default function Home() {
         >
           {/* Ambient core */}
           <motion.div
-            className="absolute h-[440px] w-[440px] rounded-full bg-red-600/[0.08] blur-[80px]"
+            className="absolute h-[min(75vw,440px)] w-[min(75vw,440px)] rounded-full bg-red-600/[0.08] blur-[60px] sm:blur-[80px]"
             animate={
               reduceMotion
                 ? undefined
@@ -430,7 +430,7 @@ export default function Home() {
           {/* Outer rotating scan ring */}
           <motion.div
             aria-hidden="true"
-            className="pointer-events-none absolute h-[420px] w-[420px] rounded-full border border-red-500/20"
+            className="pointer-events-none absolute h-[min(72vw,420px)] w-[min(72vw,420px)] rounded-full border border-red-500/20"
             animate={reduceMotion ? undefined : { rotate: 360 }}
             transition={{
               duration: 32,
@@ -445,7 +445,7 @@ export default function Home() {
           {/* Inner ring */}
           <motion.div
             aria-hidden="true"
-            className="pointer-events-none absolute h-[320px] w-[320px] rounded-full border border-white/[0.08]"
+            className="pointer-events-none absolute h-[min(54vw,320px)] w-[min(54vw,320px)] rounded-full border border-white/[0.08]"
             animate={
               reduceMotion
                 ? undefined
