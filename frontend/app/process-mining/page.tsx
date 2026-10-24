@@ -3,7 +3,6 @@
 import "@xyflow/react/dist/style.css";
 import Link from "next/link";
 import dagre from "dagre";
-import ELK from "elkjs/lib/elk.bundled.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ReactFlow, Background, Controls, MiniMap, Handle, Position, MarkerType, type Node, type Edge as FlowEdge, type NodeProps, type EdgeProps, BaseEdge, EdgeLabelRenderer, getBezierPath, getSmoothStepPath, useNodesState, useEdgesState } from "@xyflow/react";
 import { ArrowLeft, GitBranch, Activity, Users, Repeat2, TrendingUp, Filter, Network, X } from "lucide-react";
@@ -143,50 +142,9 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
   const [nodes, setNodes, onNodesChange] = useNodesState(built.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(built.edges);
   useEffect(() => {
-    let cancelled = false;
     setNodes(built.nodes);
     setEdges(built.edges);
     setSelectedItem(null);
-
-    // ELK Layered optimizes crossing minimization and supports orthogonal
-    // routing. Use it for node placement rather than relying on Dagre alone.
-    const elk = new ELK();
-    const nodeById = new Map(built.nodes.map((node) => [node.id, node]));
-    const elkGraph = {
-      id: "dfg",
-      layoutOptions: {
-        "elk.algorithm": "layered",
-        "elk.direction": "RIGHT",
-        "elk.edgeRouting": "ORTHOGONAL",
-        "elk.layered.spacing.nodeNodeBetweenLayers": "130",
-        "elk.spacing.nodeNode": "58",
-        "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
-        "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
-        "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
-        "elk.layered.thoroughness": "10",
-        "elk.padding": "[top=36,left=36,bottom=36,right=36]",
-      },
-      children: built.nodes.map((node) => ({
-        id: node.id,
-        width: node.id === "__START__" || node.id === "__END__" ? 66 : 206,
-        height: node.id === "__START__" || node.id === "__END__" ? 66 : ((node.data as AnyRecord).rework ? 112 : 88),
-      })),
-      edges: built.edges
-        .filter((edge) => edge.source !== edge.target && edge.source !== "__START__" && edge.target !== "__END__")
-        .map((edge) => ({ id: edge.id, sources: [edge.source], targets: [edge.target] })),
-    };
-    elk.layout(elkGraph).then((layout) => {
-      if (cancelled) return;
-      const points = new Map((layout.children ?? []).map((node) => [node.id, { x: node.x ?? 0, y: node.y ?? 0 }]));
-      setNodes((current) => current.map((node) => {
-        const point = points.get(node.id);
-        return point ? { ...node, position: point } : node;
-      }));
-    }).catch((error: unknown) => {
-      // Keep Dagre's deterministic positions if ELK fails for any reason.
-      console.error("ELK DFG layout failed; using Dagre fallback.", error);
-    });
-    return () => { cancelled = true; };
   }, [built, setNodes, setEdges]);
   const originalEdges = dfg.edges ?? [];
   if (!originalEdges.length) return <section className="rounded-2xl border border-white/[.09] bg-[#0b0c10]/90 p-5"><h3 className="text-sm font-semibold">{title}</h3><p className="mt-1 text-xs text-zinc-600">{description}</p><div className="mt-5"><Empty text="No transitions remain in this DFG. Check event mapping and the frequency filter."/></div></section>;
