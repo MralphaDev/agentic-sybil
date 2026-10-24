@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import DashboardBackground from "@/components/dashboard/dashboard-background";
 import DashboardHeader from "@/components/dashboard/dashboard-header";
 import DashboardHeading from "@/components/dashboard/dashboard-heading";
@@ -10,13 +9,9 @@ import AgentActivityPanel from "@/components/dashboard/agent-activity-panel";
 import InvestigationResultsPanel from "@/components/dashboard/investigation-results-panel";
 import DashboardFooter from "@/components/dashboard/dashboard-footer";
 import { useInvestigationDashboard } from "@/components/dashboard/use-investigation-dashboard";
-import InvestigationProgress, {
-  type PipelineStage,
-} from "@/components/investigation-progress";
 
 export default function DashboardPage() {
   const dashboard = useInvestigationDashboard();
-  const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>([]);
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#080809] text-zinc-100">
@@ -54,17 +49,9 @@ export default function DashboardPage() {
           <InvestigationResultsPanel
             result={dashboard.result || null}
             resultStatus={dashboard.resultStatus}
-            pipelineStages={pipelineStages}
+            pipelineStages={dashboard.pipelineStages}
             isFailed={dashboard.isFailed}
           />
-
-          {dashboard.result === null && (
-            <InvestigationProgress
-              stages={pipelineStages}
-              backendStatus={dashboard.resultStatus}
-              failed={dashboard.isFailed}
-            />
-          )}
         </section>
 
         <DashboardFooter />
