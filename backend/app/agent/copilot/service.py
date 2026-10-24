@@ -208,8 +208,8 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
             helius_result = (last["tool"], last["result"])
     else:
         database_has_transaction_rows = bool(rows) or database_has_transaction_rows
-        if explicit_helius_request or not database_has_transaction_rows:
-            label = "Calling Helius MCP for live on-chain evidence" if explicit_helius_request else "Database has no sufficient matching rows; checking Helius RPC"
+        if explicit_helius_request or wallet_address or not database_has_transaction_rows:
+            label = "Calling Helius MCP for live on-chain evidence" if explicit_helius_request else "Cross-checking wallet evidence with Helius" if wallet_address else "Database has no sufficient matching rows; checking Helius RPC"
             yield _emit("progress", {"label": label, "state": "active"})
             helius_task = asyncio.create_task(_helius_mcp_fallback(request.message, context_text))
             try:
