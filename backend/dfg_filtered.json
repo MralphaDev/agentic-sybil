@@ -1,0 +1,129 @@
+{
+  "edges": [
+    {
+      "source": "buy",
+      "target": "buy",
+      "count": 231
+    },
+    {
+      "source": "buy",
+      "target": "receive_native",
+      "count": 9
+    },
+    {
+      "source": "buy",
+      "target": "sell",
+      "count": 23
+    },
+    {
+      "source": "buy",
+      "target": "transfer_target_token",
+      "count": 6
+    },
+    {
+      "source": "receive_native",
+      "target": "buy",
+      "count": 9
+    },
+    {
+      "source": "receive_native",
+      "target": "receive_native",
+      "count": 684
+    },
+    {
+      "source": "receive_native",
+      "target": "sell",
+      "count": 20
+    },
+    {
+      "source": "receive_native",
+      "target": "transfer_native",
+      "count": 395
+    },
+    {
+      "source": "receive_native",
+      "target": "transfer_target_token",
+      "count": 34
+    },
+    {
+      "source": "receive_target_token",
+      "target": "sell",
+      "count": 8
+    },
+    {
+      "source": "receive_target_token",
+      "target": "transfer_target_token",
+      "count": 61
+    },
+    {
+      "source": "sell",
+      "target": "buy",
+      "count": 20
+    },
+    {
+      "source": "sell",
+      "target": "sell",
+      "count": 1599
+    },
+    {
+      "source": "sell",
+      "target": "transfer_native",
+      "count": 81
+    },
+    {
+      "source": "sell",
+      "target": "transfer_target_token",
+      "count": 12
+    },
+    {
+      "source": "transfer_native",
+      "target": "receive_native",
+      "count": 198
+    },
+    {
+      "source": "transfer_native",
+      "target": "sell",
+      "count": 19
+    },
+    {
+      "source": "transfer_native",
+      "target": "transfer_native",
+      "count": 348
+    },
+    {
+      "source": "transfer_native",
+      "target": "transfer_target_token",
+      "count": 6
+    },
+    {
+      "source": "transfer_target_token",
+      "target": "receive_target_token",
+      "count": 61
+    },
+    {
+      "source": "transfer_target_token",
+      "target": "sell",
+      "count": 39
+    },
+    {
+      "source": "transfer_target_token",
+      "target": "transfer_native",
+      "count": 29
+    },
+    {
+      "source": "transfer_target_token",
+      "target": "transfer_target_token",
+      "count": 62
+    }
+  ],
+  "start_activities": {
+    "receive_native": 451,
+    "receive_target_token": 2
+  },
+  "end_activities": {
+    "transfer_native": 303,
+    "transfer_target_token": 63,
+    "receive_native": 13,
+    "sell": 1
+  }
+}

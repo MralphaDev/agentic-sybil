@@ -1,0 +1,25 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Virtual environments
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Tool caches
+.ruff_cache/
+.mypy_cache/
+
+# Node.js
+node_modules/
+.next/
+out/
+
+# Logs
+*.log

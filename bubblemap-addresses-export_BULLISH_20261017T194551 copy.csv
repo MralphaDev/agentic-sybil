@@ -1,0 +1,7 @@
+﻿address,cluster_id,historic_tranfers_in,historic_tranfers_out,is_contract,is_exchange,is_visible,name,supply_percentage,token_amount,type
+"GC1uTsxrrLAuWby3uWSEMjUXhJMJhhv1SXJ9A1jHvyxp","C-0xf1",1289954,2562678,TRUE,TRUE,TRUE,"PumpSwap (BULLISH-SOL)",0.06254294056645715,75482980.81985521,"holder"
+"3XM9XAwKke6YJTtNfL8e7R6bek9nY3sUzS7o1EZwuDBn","C-0xf1",1,1,FALSE,FALSE,TRUE,"",0,0,"magic"
+"CBa4wcbmy7pzLMnqeKBjiYKA1pWQCmXvNN4A5G46CRq7","C-0xf1",1039,260,FALSE,FALSE,TRUE,"",0.004245648325229999,5124066.57248,"holder"
+"4dKnYvpdCfEF4fndL7yTBPkYxTwnshrNvrLYVFnpYQmq","C-0xf1",3,63,FALSE,FALSE,TRUE,"",0,0,"manual"
+"5rwHBwW1YkqVHcx8k3oCwPCr1gE5TV8YihuWQDVvHKCq","C-0xf1",3,3,FALSE,FALSE,TRUE,"",0,0,"manual"
+"5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9","C-0xf1",33432674,43846587,FALSE,TRUE,TRUE,"Binance 2",0,0,"magic"

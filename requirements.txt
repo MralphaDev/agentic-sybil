@@ -1,0 +1,37 @@
+﻿# --- API and application ---
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+pydantic-settings
+python-dotenv
+
+# --- HTTP and data ingestion ---
+httpx
+tenacity
+
+# --- Database ---
+sqlalchemy
+pymysql
+alembic
+
+# --- Data processing and graph analysis ---
+numpy
+pandas
+scikit-learn
+networkx
+hdbscan
+
+# --- AI agent and LLM integration ---
+langgraph
+langchain-core
+langchain-openai
+mcp
+
+# --- Testing ---
+pytest
+pytest-asyncio
+respx
+
+# --- Code quality ---
+ruff
