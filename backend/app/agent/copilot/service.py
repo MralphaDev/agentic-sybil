@@ -7,7 +7,7 @@ from typing import Any, AsyncIterator
 from fastapi import HTTPException
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.agent.copilot.common import logger, MAX_HELIUS_CALLS, MAX_OUTPUT_TOKENS, MAX_QUESTION_CHARS, MAX_ROWS, _emit, _get_llm
-from app.agent.copilot.database import _generate_sql, _get_investigation_context, _lookup_wallet_direct, _run_readonly_query, _validate_sql
+from app.agent.copilot.database import _generate_sql, _get_investigation_context, _lookup_wallet_direct, _lookup_wallet_funding_evidence, _run_readonly_query, _validate_sql
 from app.agent.copilot.helius import _helius_mcp_fallback
 from app.agent.copilot.models import CopilotRequest
 from app.agent.copilot.prompts import COPILOT_SYSTEM
@@ -76,13 +76,30 @@ async def _answer_report_question(question: str, context_text: str) -> AsyncIter
                 if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
                     yield _emit("token", {"content": part["text"]})
 
-def _is_funding_question(question: str) -> bool:
-    """Recognize natural-language requests that need funding-source tracing."""
-    return bool(re.search(
-        r"\b(funder|funded by|funding source|funding chain|first fund|who funded|funding wallet|upstream funder|second hop|funding path|trace (?:the )?funds?)\b",
-        question,
-        re.IGNORECASE,
-    ))
+async def _needs_funding_trace(question: str) -> bool:
+    """Classify the investigative objective semantically, not by a fixed phrase list."""
+    try:
+        response = await _get_llm(80).ainvoke([
+            SystemMessage(content=(
+                "Classify the user's investigative goal. Answer only YES or NO. "
+                "Answer YES if they want to trace who funded a wallet, a funder's funder, "
+                "an upstream predecessor, an ancestor/hop in a funding chain, or the earliest "
+                "source of funds. Treat paraphrases and indirect wording as equivalent. "
+                "Answer NO for unrelated balance, token, ownership, or general wallet questions."
+            )),
+            HumanMessage(content=question[:MAX_QUESTION_CHARS]),
+        ])
+        raw = response.content
+        if isinstance(raw, list):
+            raw = " ".join(part.get("text", "") for part in raw if isinstance(part, dict))
+        return str(raw).strip().upper().startswith("YES")
+    except Exception as exc:
+        logger.warning("[Copilot] Funding-goal classification failed; using phrase fallback: %s", str(exc)[:160])
+        return bool(re.search(
+            r"\b(funder|funded by|funding|fund|predecessor|upstream|ancestor|hop|trace (?:the )?funds?)\b",
+            question,
+            re.IGNORECASE,
+        ))
 
 
 async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
@@ -158,64 +175,85 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
         r"\bhelius\b|\bmcp\b|\brpc\b|live on.chain|on.chain (?:history|data|transactions)|full transaction history|fetch transactions from chain",
         request.message, re.IGNORECASE,
     ))
-    funding_question = bool(wallet_address and _is_funding_question(request.message))
+    funding_question = bool(wallet_address and await _needs_funding_trace(request.message))
     if funding_question:
-        # Partial indexed events are not sufficient for funding-chain questions.
-        # Follow discovered funders through PostgreSQL and Helius, bounded to three calls.
-        yield _emit("progress", {"label": "Tracing the funding chain across PostgreSQL and Helius", "state": "active"})
+        # Investigate the funding graph from SQL first. The wallet's own profile/events
+        # are not enough: every discovered predecessor becomes the next lookup target.
+        yield _emit("progress", {"label": "Tracing upstream funding evidence in PostgreSQL", "state": "active"})
         address_pattern = re.compile(r"(?<![1-9A-HJ-NP-Za-km-z])([1-9A-HJ-NP-Za-km-z]{32,44})(?![1-9A-HJ-NP-Za-km-z])")
         queue, queued, visited = [wallet_address], {wallet_address}, set()
         helius_unavailable = False
-        wallet_data: dict[str, dict[str, Any]] = {wallet_address: direct_data} if "direct_data" in locals() else {}
-        while queue and len(visited) < MAX_HELIUS_CALLS:
+        while queue and len(visited) < 3:
             current = queue.pop(0)
             if current in visited:
                 continue
             visited.add(current)
-            current_data = wallet_data.get(current)
-            if current_data is None:
-                try:
-                    current_data = await asyncio.to_thread(_lookup_wallet_direct, current)
-                    wallet_data[current] = current_data
-                    if current_data.get("wallet_profile") or current_data.get("recent_events"):
-                        rows.append({"wallet_address_lookup": current, "wallet_profile": current_data.get("wallet_profile"), "recent_events": current_data.get("recent_events", [])})
-                except Exception as exc:
-                    logger.warning("[Copilot] Follow-up DB lookup failed for %s: %s", current, str(exc)[:180])
-                    current_data = {"wallet_profile": None, "recent_events": []}
-            profile = current_data.get("wallet_profile") or {}
-            profile_funder = profile.get("first_funder")
-            if isinstance(profile_funder, str) and profile_funder not in visited and profile_funder not in queued:
-                queue.append(profile_funder)
-                queued.add(profile_funder)
-            if helius_unavailable:
-                yield _emit("progress", {"label": f"Checking indexed funding records for wallet {current[:6]}…{current[-4:]}", "state": "active"})
-                continue
-            yield _emit("progress", {"label": f"Checking funding source for wallet {current[:6]}…{current[-4:]}", "state": "active"})
-            task = asyncio.create_task(_helius_mcp_fallback(request.message, context_text, wallet_address_override=current, action_override="getWalletFundedBy"))
             try:
-                while not task.done():
-                    done, _ = await asyncio.wait({task}, timeout=8)
-                    if not done:
-                        yield _emit("progress", {"label": "Helius is still checking the funding source…", "state": "active"})
-                result = await task
-            except asyncio.CancelledError:
-                task.cancel()
-                raise
-            if result:
-                helius_results.append({"wallet_address": current, "tool": result[0], "result": result[1]})
-                if result[0] == "HELIUS_MCP_ERROR":
-                    # An MCP startup/transport failure is usually server-wide; don't
-                    # relaunch the same broken subprocess for every upstream wallet.
-                    helius_unavailable = True
-                    yield _emit("progress", {"label": f"Helius MCP error: {str(result[1])[:900]}", "state": "error"})
-                else:
-                    candidates = []
-                    for candidate in address_pattern.findall(str(result[1])):
-                        if candidate != current and candidate not in visited and candidate not in queued and candidate not in candidates:
-                            candidates.append(candidate)
-                    for candidate in candidates[:2]:
-                        queue.append(candidate)
-                        queued.add(candidate)
+                evidence = await asyncio.to_thread(_lookup_wallet_funding_evidence, current)
+            except Exception as exc:
+                logger.warning("[Copilot] SQL funding lookup failed for %s: %s", current, str(exc)[:180])
+                evidence = {"wallet_profile": None, "earliest_incoming_events": []}
+            profile = evidence.get("wallet_profile") or {}
+            incoming = evidence.get("earliest_incoming_events") or []
+            candidates = []
+            profile_funder = profile.get("first_funder")
+            if isinstance(profile_funder, str) and profile_funder != current:
+                candidates.append(profile_funder)
+            # If no indexed profile funder exists, derive candidates from incoming
+            # transfer evidence. Prefer native/SOL transfers over arbitrary token receipts.
+            if not candidates and incoming:
+                def native_score(event: dict[str, Any]) -> int:
+                    description = " ".join(str(event.get(key) or "") for key in (
+                        "type", "translated_type", "kind", "from_token", "to_token"
+                    )).lower()
+                    return int("sol" in description or "native" in description)
+                ordered = sorted(incoming, key=native_score, reverse=True)
+                for event in ordered:
+                    candidate = event.get("from_user_address")
+                    if isinstance(candidate, str) and candidate != current and candidate not in candidates:
+                        candidates.append(candidate)
+                    if len(candidates) >= 3:
+                        break
+            rows.append({
+                "funding_wallet_lookup": current,
+                "wallet_profile": profile or None,
+                "earliest_incoming_events": incoming,
+                "candidate_funders": candidates,
+            })
+            yield _emit("progress", {"label": f"SQL checked wallet {current[:6]}…{current[-4:]}", "state": "active"})
+            for candidate in candidates:
+                if candidate not in visited and candidate not in queued:
+                    queue.append(candidate)
+                    queued.add(candidate)
+            # Helius is a fallback, not a prerequisite: use it only if SQL cannot
+            # identify a next hop, or if the user explicitly requested it.
+            should_try_helius = explicit_helius_request or not candidates
+            if should_try_helius and not helius_unavailable and len(helius_results) < MAX_HELIUS_CALLS:
+                task = asyncio.create_task(_helius_mcp_fallback(
+                    request.message, context_text,
+                    wallet_address_override=current, action_override="getWalletFundedBy"
+                ))
+                try:
+                    while not task.done():
+                        done, _ = await asyncio.wait({task}, timeout=8)
+                        if not done:
+                            yield _emit("progress", {"label": "Helius is still checking the funding source…", "state": "active"})
+                    result = await task
+                except asyncio.CancelledError:
+                    task.cancel()
+                    raise
+                if result:
+                    helius_results.append({"wallet_address": current, "tool": result[0], "result": result[1]})
+                    if result[0] == "HELIUS_MCP_ERROR":
+                        helius_unavailable = True
+                        yield _emit("progress", {"label": f"Helius MCP error: {str(result[1])[:900]}", "state": "error"})
+                    else:
+                        for candidate in address_pattern.findall(str(result[1])):
+                            if candidate != current and candidate not in visited and candidate not in queued:
+                                queue.append(candidate)
+                                queued.add(candidate)
+            if not candidates and not helius_results:
+                yield _emit("progress", {"label": f"No upstream SQL record found for {current[:6]}…{current[-4:]}", "state": "active"})
         if helius_results:
             last = helius_results[-1]
             helius_result = (last["tool"], last["result"])
