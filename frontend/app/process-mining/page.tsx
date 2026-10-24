@@ -19,8 +19,11 @@ function number(value: unknown): number | null {
 function label(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "number") return value.toLocaleString();
+  if (typeof value === "boolean") return value ? "Yes" : "No";
   if (value === null || value === undefined) return "—";
-  return JSON.stringify(value);
+  if (Array.isArray(value)) return value.map((item) => typeof item === "string" ? item : "").filter(Boolean).join(" → ") || "Sequence details unavailable";
+  if (typeof value === "object") return "Details available";
+  return String(value);
 }
 function pretty(key: string) { return key.replaceAll("_", " ").replace(/\b\w/g, (m) => m.toUpperCase()); }
 
@@ -97,7 +100,7 @@ export default function ProcessMiningPage() {
         <section className="grid gap-4 lg:grid-cols-2">
           {[["Intermediary analysis", intermediaries], ["Seller behavior", seller], ["Coordinated intermediary analysis", coordinated], ["Token handoff analysis", record(data.intermediary_handoff_analysis)]].map(([title, value]) => {
             const obj = record(value);
-            return <div key={String(title)} className="rounded-2xl border border-white/[0.09] bg-[#0b0c10]/90 p-5"><h3 className="text-sm font-semibold">{String(title)}</h3><div className="mt-4 space-y-2">{Object.entries(obj).slice(0, 8).map(([key, item]) => <div key={key} className="flex items-start justify-between gap-3 border-b border-white/[0.05] pb-2"><span className="text-xs text-zinc-500">{pretty(key)}</span><span className="max-w-[68%] break-all text-right font-mono text-[11px] text-zinc-300">{label(item)}</span></div>)}{!Object.keys(obj).length && <Empty text="No details returned for this analysis."/>}</div></div>;
+            return <div key={String(title)} className="rounded-2xl border border-white/[0.09] bg-[#0b0c10]/90 p-5"><h3 className="text-sm font-semibold">{String(title)}</h3><div className="mt-4 space-y-2">{Object.entries(obj).filter(([, item]) => item === null || ["string", "number", "boolean"].includes(typeof item)).slice(0, 8).map(([key, item]) => <div key={key} className="flex items-start justify-between gap-3 border-b border-white/[0.05] pb-2"><span className="text-xs text-zinc-500">{pretty(key)}</span><span className="max-w-[68%] break-all text-right font-mono text-[11px] text-zinc-300">{label(item)}</span></div>)}{!Object.keys(obj).length && <Empty text="No details returned for this analysis."/>}</div></div>;
           })}
         </section>
       </>}
