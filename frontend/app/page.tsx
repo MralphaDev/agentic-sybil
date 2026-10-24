@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import AgentTerminal from "@/components/agent-terminal";
 
@@ -70,6 +72,14 @@ const sectionReveal = {
 
 export default function Home() {
   const reduceMotion = useReducedMotion();
+  const router = useRouter();
+  const [transitioning, setTransitioning] = useState(false);
+
+  const beginTransition = () => {
+    if (transitioning) return;
+    setTransitioning(true);
+    window.setTimeout(() => router.push("/investigation-mode"), reduceMotion ? 100 : 1050);
+  };
 
   const revealInitial = reduceMotion ? false : "hidden";
   const revealVisible = reduceMotion ? undefined : "visible";
@@ -227,7 +237,11 @@ export default function Home() {
           </div>
 
           <Link
-            href="/forensic"
+            href="/investigation-mode"
+            onClick={(event) => {
+              event.preventDefault();
+              beginTransition();
+            }}
             className="group inline-flex items-center gap-2 rounded-md bg-white px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-zinc-200"
           >
             Run Investigation
@@ -323,7 +337,11 @@ export default function Home() {
             className="mt-9 flex flex-col gap-3 sm:flex-row"
           >
             <Link
-              href="/forensic"
+              href="/investigation-mode"
+            onClick={(event) => {
+              event.preventDefault();
+              beginTransition();
+            }}
               className="group relative inline-flex min-h-12 items-center justify-center gap-3 overflow-hidden rounded-md bg-white px-6 text-sm font-semibold text-black transition hover:bg-zinc-200"
             >
               {!reduceMotion && (
@@ -562,6 +580,72 @@ export default function Home() {
           </motion.div>
         </div>
       </section>
+
+      {/* Cinematic route transition */}
+      {transitioning && (
+        <motion.div
+          aria-live="polite"
+          role="status"
+          className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-[#050506] text-white"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.22 }}
+        >
+          <motion.div
+            aria-hidden="true"
+            className="absolute left-1/2 top-1/2 h-[20rem] w-[20rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-600/25 blur-[90px]"
+            initial={{ scale: 0.15, opacity: 0.2 }}
+            animate={{ scale: 3.8, opacity: 1 }}
+            transition={{ duration: 0.95, ease: [0.16, 1, 0.3, 1] }}
+          />
+          <motion.div
+            aria-hidden="true"
+            className="absolute inset-0"
+            initial={{ clipPath: "circle(0% at 50% 50%)" }}
+            animate={{ clipPath: "circle(150% at 50% 50%)" }}
+            transition={{ duration: 0.9, ease: [0.76, 0, 0.24, 1] }}
+            style={{
+              background:
+                "radial-gradient(ellipse at center, rgba(127,29,29,0.26) 0%, rgba(5,5,6,0.96) 62%)",
+            }}
+          />
+          {!reduceMotion && (
+            <motion.div
+              aria-hidden="true"
+              className="absolute inset-x-0 h-px bg-gradient-to-r from-transparent via-red-300/80 to-transparent shadow-[0_0_24px_rgba(248,113,113,0.8)]"
+              initial={{ top: "0%", opacity: 0 }}
+              animate={{ top: ["0%", "100%"], opacity: [0, 1, 0.7] }}
+              transition={{ duration: 0.8, ease: "easeInOut" }}
+            />
+          )}
+          <motion.div
+            className="relative z-10 px-6 text-center"
+            initial={{ opacity: 0, y: 24, filter: "blur(12px)" }}
+            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            transition={{ delay: 0.12, duration: 0.55, ease: easeOut }}
+          >
+            <div className="mb-5 flex items-center justify-center gap-3 font-mono text-[10px] tracking-[0.35em] text-red-300">
+              <span className="h-px w-8 bg-red-400/60" />
+              SYBILTRACE / INITIALIZING
+              <span className="h-px w-8 bg-red-400/60" />
+            </div>
+            <h2 className="text-3xl font-semibold tracking-[-0.05em] sm:text-5xl">
+              Follow the <span className="text-red-400">evidence.</span>
+            </h2>
+            <p className="mt-4 text-xs tracking-[0.2em] text-zinc-500">
+              SELECTING INVESTIGATION MODE
+            </p>
+            <div className="mx-auto mt-7 h-px w-48 overflow-hidden bg-white/10">
+              <motion.div
+                className="h-full origin-left bg-red-400"
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: 1 }}
+                transition={{ duration: 0.82, ease: "easeInOut" }}
+              />
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
     </main>
   );
 }
