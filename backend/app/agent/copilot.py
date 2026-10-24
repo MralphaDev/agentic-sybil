@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import re
 from typing import Any, AsyncIterator
@@ -16,6 +17,8 @@ from app.core.config import ENV_FILE, settings
 from app.database.connection import get_connection
 
 load_dotenv(ENV_FILE, override=False)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/investigations", tags=["Investigation Copilot"])
 MAX_SQL_CALLS = 1
@@ -401,28 +404,49 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                             f"No compatible read-only transaction-history tool found. Available tools: {available}",
                         )
                     name, arguments = selected
+                    logger.info(
+                        "[Helius MCP] Calling tool=%s action=%s",
+                        name,
+                        arguments.get("action", "<direct-tool>"),
+                    )
                     result = await session.call_tool(name, arguments)
-                    if getattr(result, "isError", False):
-                        return ("HELIUS_MCP_ERROR", json.dumps(result.content, ensure_ascii=False, default=str)[:1500])
                     serialized = json.dumps(result.content, ensure_ascii=False, default=str)
+                    if getattr(result, "isError", False):
+                        detail = serialized[:5000]
+                        logger.error(
+                            "[Helius MCP] Tool returned isError=true; tool=%s action=%s result=%s",
+                            name,
+                            arguments.get("action", "<direct-tool>"),
+                            detail,
+                        )
+                        return ("HELIUS_MCP_ERROR", detail)
+                    logger.info(
+                        "[Helius MCP] Tool succeeded; tool=%s response_chars=%d",
+                        name,
+                        len(serialized),
+                    )
                     return name, serialized[:7000]
     except Exception as exc:
-        # ExceptionGroup from anyio/asyncio often hides the useful nested cause in
-        # its default string ("unhandled errors in a TaskGroup"). Flatten it so the
-        # caller can distinguish startup, transport, schema, and Helius API failures.
+        # TaskGroup/ExceptionGroup can hide the underlying transport or subprocess
+        # failure. Log the full traceback and flatten nested exceptions for the UI.
         def describe_exception(error: BaseException, depth: int = 0) -> list[str]:
             prefix = "  " * depth
-            lines = [f"{prefix}{type(error).__name__}: {str(error)[:500]}"]
+            lines = [f"{prefix}{type(error).__name__}: {str(error)[:1000]}"]
             nested = getattr(error, "exceptions", None)
             if nested:
-                for child in nested[:5]:
+                for child in nested[:10]:
                     lines.extend(describe_exception(child, depth + 1))
             cause = getattr(error, "__cause__", None)
+            context = getattr(error, "__context__", None)
             if cause and not nested:
                 lines.extend(describe_exception(cause, depth + 1))
+            elif context and not nested:
+                lines.extend(describe_exception(context, depth + 1))
             return lines
 
-        detail = "\\n".join(describe_exception(exc))[:1800]
+        detail = "\\n".join(describe_exception(exc))[:5000]
+        logger.exception("[Helius MCP] Request failed; flattened cause: %s", detail)
+        print(f"\\n[Helius MCP ERROR]\\n{detail}", flush=True)
         return ("HELIUS_MCP_ERROR", detail)
 
 
@@ -585,6 +609,15 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
                         "state": "active",
                     })
             helius_result = await helius_task
+            if helius_result and helius_result[0] == "HELIUS_MCP_ERROR":
+                diagnostic = str(helius_result[1])[:1200]
+                logger.error("[Copilot] Helius MCP failure returned to request: %s", diagnostic)
+                # Surface the actual MCP failure in the existing visible progress stream,
+                # rather than letting the answer model silently paraphrase or hide it.
+                yield _emit("progress", {
+                    "label": f"Helius MCP error: {diagnostic}",
+                    "state": "error",
+                })
         except asyncio.CancelledError:
             helius_task.cancel()
             raise
