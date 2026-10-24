@@ -361,13 +361,29 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
 
                     tool_by_name = {tool.name.lower(): tool for tool in tools}
                     selected = None
-                    # Current Helius docs list wallet history under heliusWallet.getWalletHistory
-                    # and enhanced address history under heliusTransaction.getTransactionHistory.
-                    # Try the documented wallet-history route first; then transaction history.
-                    for router_name, action_name in (
-                        ("heliuswallet", "getWalletHistory"),
-                        ("heliustransaction", "getTransactionHistory"),
-                    ):
+                    # Route wallet-specific questions to the relevant read-only Wallet API
+                    # action. Keep transaction history as the default when no clearer intent
+                    # is expressed; never expose wallet-write actions through this fallback.
+                    q = question.lower()
+                    if re.search(r"\\b(identity|who owns|owner of|label|exchange|known wallet|wallet label)\\b", q):
+                        wallet_action = "getWalletIdentity"
+                    elif re.search(r"\\b(funded by|funding source|first fund|who funded|funding wallet)\\b", q):
+                        wallet_action = "getWalletFundedBy"
+                    elif re.search(r"\\b(transfers?|sent|received|counterpart(y|ies)|inbound|outbound)\\b", q):
+                        wallet_action = "getWalletTransfers"
+                    elif re.search(r"\\b(token balances?|spl balances?|token holdings?|holdings|portfolio|usd value|asset balances?)\\b", q):
+                        wallet_action = "getWalletBalances" if re.search(r"\\b(portfolio|usd value|total value)\\b", q) else "getTokenBalances"
+                    elif re.search(r"\\b(sol balance|native balance|how much sol|sol amount|wallet balance|balance of)\\b", q):
+                        wallet_action = "getBalance"
+                    else:
+                        wallet_action = "getWalletHistory"
+
+                    preferred_router_order = (
+                        [("heliuswallet", wallet_action)]
+                        if wallet_action != "getWalletHistory"
+                        else [("heliuswallet", "getWalletHistory"), ("heliustransaction", "getTransactionHistory")]
+                    )
+                    for router_name, action_name in preferred_router_order:
                         router = tool_by_name.get(router_name)
                         if not router:
                             continue
@@ -382,6 +398,9 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                         preferred = {
                             address_key: wallet_address,
                             "detail": "standard",
+                            "_feedback": f"Read-only wallet investigation: {action_name}",
+                            "_feedbackTool": f"{router.name}.{action_name}",
+                            "_model": "deepseek-chat",
                         }
                         for key in properties:
                             if re.search(r"^(limit|max_results|page_size)$", key, re.I):
@@ -409,8 +428,8 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                                         "action": action_name,
                                         "address": wallet_address,
                                         "detail": "standard",
-                                        "_feedback": "none",
-                                        "_feedbackTool": "none",
+                                        "_feedback": f"Read-only wallet investigation: {action_name}",
+                                        "_feedbackTool": f"{router.name}.{action_name}",
                                         "_model": "deepseek-chat",
                                     },
                                 )
@@ -514,7 +533,12 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                         is_error,
                         serialized[:5000],
                     )
-                    if is_error:
+                    # Some Helius MCP server versions wrap validation failures in a
+                    # text content block while leaving the MCP-level isError flag false.
+                    returned_validation_error = bool(
+                        re.search(r"MCP error -\\d+|Input validation error|Invalid arguments for tool", serialized, re.I)
+                    )
+                    if is_error or returned_validation_error:
                         detail = serialized[:5000]
                         logger.error(
                             "[Helius MCP] Tool returned isError=true; tool=%s action=%s result=%s",
