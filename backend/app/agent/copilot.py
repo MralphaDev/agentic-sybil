@@ -385,7 +385,21 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
             else "Database has no sufficient matching rows; checking Helius RPC"
         )
         yield _emit("progress", {"label": label, "state": "active"})
-        helius_result = await _helius_mcp_fallback(request.message, context_text)
+        # Keep the SSE connection active while the MCP subprocess starts and queries RPC.
+        # Some browser/proxy paths drop streams that remain idle during a long await.
+        helius_task = asyncio.create_task(_helius_mcp_fallback(request.message, context_text))
+        try:
+            while not helius_task.done():
+                done, _ = await asyncio.wait({helius_task}, timeout=8)
+                if not done:
+                    yield _emit("progress", {
+                        "label": "Helius is still retrieving on-chain data…",
+                        "state": "active",
+                    })
+            helius_result = await helius_task
+        except asyncio.CancelledError:
+            helius_task.cancel()
+            raise
 
     evidence = {
         "postgres_rows": rows,
