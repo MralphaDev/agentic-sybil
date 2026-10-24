@@ -46,7 +46,7 @@ export default function ProcessMiningPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const topVariants = array(data.top_variants);
+  const topVariants = array(record(data.top_variants).top_variants ?? data.top_variants);
   const dfg = record(data.stochastic_dfg);
   const dfgEdges = array(dfg.edges ?? dfg.transitions ?? data.dfg);
   const concentration = record(data.first_activity_concentration);
