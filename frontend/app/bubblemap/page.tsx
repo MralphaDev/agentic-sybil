@@ -131,9 +131,28 @@ export default function BubblemapPage() {
       const target = typeof link.target === "string" ? nodeById.get(link.target) : link.target;
       if (!source || !target || source.x == null || source.y == null || target.x == null || target.y == null) continue;
       const relevant = !currentSelected || source.id === currentSelected || target.id === currentSelected;
-      ctx.beginPath(); ctx.moveTo(source.x, source.y); ctx.lineTo(target.x, target.y);
-      ctx.strokeStyle = relevant ? "rgba(192,205,230,.42)" : "rgba(148,163,184,.075)";
+      const dx = target.x - source.x, dy = target.y - source.y;
+      const length = Math.max(1, Math.hypot(dx, dy));
+      const ux = dx / length, uy = dy / length;
+      const sourceRadius = Math.max(13, Math.min(25, 18 + Math.log2(number(source.in_degree) + number(source.out_degree) + 1) * 1.15));
+      const targetRadius = Math.max(13, Math.min(25, 18 + Math.log2(number(target.in_degree) + number(target.out_degree) + 1) * 1.15));
+      const sx = source.x + ux * sourceRadius * .72, sy = source.y + uy * sourceRadius * .72;
+      const tx = target.x - ux * targetRadius * 1.12, ty = target.y - uy * targetRadius * 1.12;
+      const lineColor = relevant ? "rgba(192,205,230,.48)" : "rgba(148,163,184,.075)";
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty);
+      ctx.strokeStyle = lineColor;
       ctx.lineWidth = (relevant ? 1.05 : .6) / view.k; ctx.stroke();
+      // Small directional arrowheads echo the reference graph without dominating dense clusters.
+      if (relevant || (i % 3 === 0 && view.k > .65)) {
+        const arrow = 4.2 / view.k, wing = 2.8 / view.k;
+        ctx.beginPath();
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(tx - ux * arrow - uy * wing, ty - uy * arrow + ux * wing);
+        ctx.lineTo(tx - ux * arrow + uy * wing, ty - uy * arrow - ux * wing);
+        ctx.closePath();
+        ctx.fillStyle = relevant ? "rgba(210,220,240,.62)" : "rgba(148,163,184,.12)";
+        ctx.fill();
+      }
     }
     for (const node of nodes) {
       if (node.x == null || node.y == null) continue;
