@@ -43,8 +43,8 @@ public.wallet_event_log(wallet_address, signature, type, translated_type, event_
 from_user_address, to_user_address, kind, from_token, from_amount, to_token, to_amount,
 protocol, direction, amount, mint)
 public.wallet_profiles(wallet_address, is_contract, is_exchange, forensic_status,
-first_active_time, first_fund_time, first_fund_amount, first_fund_token, first_funder,
-total_tx_count, in_degree, out_degree, processed_at, updated_at)
+first_fund_time, first_fund_amount, first_fund_token, first_funder,
+total_tx_count, in_degree, out_degree)
 Rules: only SELECT or WITH ending in SELECT; only these two tables; never use
 information_schema, pg_catalog, system functions, writes, DDL, multiple statements,
 or SELECT *. Use explicit columns and LIMIT <= 50. If the question cannot be answered
@@ -139,9 +139,8 @@ def _lookup_wallet_direct(wallet_address: str) -> dict[str, Any]:
             profile_cursor = conn.execute(
                 """
                 SELECT wallet_address, is_contract, is_exchange, forensic_status,
-                       first_active_time, first_fund_time, first_fund_amount,
-                       first_fund_token, first_funder, total_tx_count,
-                       in_degree, out_degree, processed_at, updated_at
+                       first_fund_time, first_fund_amount, first_fund_token,
+                       first_funder, total_tx_count, in_degree, out_degree
                 FROM public.wallet_profiles
                 WHERE wallet_address = %s
                 LIMIT 1
