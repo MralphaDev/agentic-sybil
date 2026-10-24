@@ -249,11 +249,18 @@ def analyze_first_activity_concentration(
             for timestamp, count in counts.items()
         }
 
+    four_hour_distribution = series_to_distribution(four_hour)
+    # Also expose an explicit list for frontend chart libraries. This avoids
+    # relying on object-key handling and keeps the UTC timestamp/count schema clear.
+    four_hour_buckets = [
+        {"timestamp": timestamp.isoformat(), "count": int(count)}
+        for timestamp, count in four_hour.items()
+    ]
+
     result = {
         "wallet_count": wallet_count,
-        "four_hour_distribution": series_to_distribution(
-            four_hour
-        ),
+        "four_hour_distribution": four_hour_distribution,
+        "four_hour_buckets": four_hour_buckets,
         "four_hour_stats": four_hour_stats,
         "charts": {
             "four_hour": {},
