@@ -100,30 +100,71 @@ export default function InvestigationProgress({
     (stage) => stage.state === "finished",
   ).length;
 
-  const content: ReactNode[] = mainStages.map((stage) => (
-    <StageRow key={stage.step} stage={stage} />
-  ));
+  const parentStage: PipelineStage | undefined = processMiningParent ?? (
+    processMiningChildren.length > 0
+      ? {
+          step: "12_run_process_mining",
+          title: "Running Process Mining",
+          detail: "Analyzing wallet actions, behavioral variants, and intermediary activity.",
+          state: processMiningChildren.some((stage) => stage.state === "running")
+            ? "running"
+            : processMiningChildren.some((stage) => stage.state === "failed")
+              ? "failed"
+              : "finished",
+        }
+      : undefined
+  );
 
-  if (processMiningParent || processMiningChildren.length > 0) {
-    const parentStage: PipelineStage = processMiningParent ?? {
-      step: "12_run_process_mining",
-      title: "Running Process Mining",
-      detail: "Analyzing wallet actions, behavioral variants, and intermediary activity.",
-      state: processMiningChildren.some((stage) => stage.state === "running")
-        ? "running"
-        : processMiningChildren.some((stage) => stage.state === "failed")
-          ? "failed"
-          : "finished",
-    };
+  const content: ReactNode[] = [];
+  let processMiningGroupAdded = false;
 
+  for (const stage of stages) {
+    if (/^12_\\d{2}_/.test(stage.step)) {
+      if (!processMiningGroupAdded && !processMiningParent) {
+        processMiningGroupAdded = true;
+        content.push(
+          <div
+            key="process-mining-group"
+            className="space-y-2 rounded-xl border border-white/[0.07] bg-white/[0.015] p-3"
+          >
+            {parentStage && <StageRow stage={parentStage} />}
+            {processMiningChildren.map((child) => (
+              <StageRow key={child.step} stage={child} nested />
+            ))}
+          </div>,
+        );
+      }
+      continue;
+    }
+
+    if (stage.step === "12_run_process_mining") {
+      processMiningGroupAdded = true;
+      content.push(
+        <div
+          key="process-mining-group"
+          className="space-y-2 rounded-xl border border-white/[0.07] bg-white/[0.015] p-3"
+        >
+          {parentStage && <StageRow stage={parentStage} />}
+          {processMiningChildren.map((child) => (
+            <StageRow key={child.step} stage={child} nested />
+          ))}
+        </div>,
+      );
+      continue;
+    }
+
+    content.push(<StageRow key={stage.step} stage={stage} />);
+  }
+
+  if (!processMiningGroupAdded && parentStage) {
     content.push(
       <div
         key="process-mining-group"
         className="space-y-2 rounded-xl border border-white/[0.07] bg-white/[0.015] p-3"
       >
         <StageRow stage={parentStage} />
-        {processMiningChildren.map((stage) => (
-          <StageRow key={stage.step} stage={stage} nested />
+        {processMiningChildren.map((child) => (
+          <StageRow key={child.step} stage={child} nested />
         ))}
       </div>,
     );
