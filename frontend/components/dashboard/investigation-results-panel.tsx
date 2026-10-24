@@ -1,6 +1,7 @@
 
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import {
   Activity,
@@ -13,6 +14,8 @@ import {
   GitBranch,
   Network,
   Wallet,
+  Orbit,
+  ChartNoAxesCombined,
 } from "lucide-react";
 import InvestigationProgress, {
   type PipelineStage,
@@ -295,6 +298,43 @@ export default function InvestigationResultsPanel({
             icon={GitBranch}
           />
         </div>
+      </div>
+
+
+      {/* Interactive investigation workspaces */}
+      <div className="grid gap-3 md:grid-cols-2">
+        <Link href="/bubblemap" className="group relative overflow-hidden rounded-xl border border-red-500/20 bg-gradient-to-br from-[#160d11] via-[#0d0d12] to-[#090a0d] p-5 transition duration-300 hover:-translate-y-0.5 hover:border-red-400/45 hover:shadow-[0_12px_45px_rgba(239,68,68,0.09)]">
+          <div className="absolute -right-10 -top-12 h-36 w-36 rounded-full bg-red-500/[0.08] blur-3xl transition group-hover:bg-red-500/[0.16]" />
+          <div className="relative flex items-start justify-between gap-4">
+            <div>
+              <span className="text-[9px] tracking-[0.2em] text-red-300/80">INTERACTIVE FORENSICS</span>
+              <h3 className="mt-2 text-base font-semibold text-white">View Bubblemap</h3>
+              <p className="mt-2 max-w-sm text-xs leading-5 text-zinc-500">Explore wallet-to-wallet connections, switch between funding provenance and aggregated transfers, and inspect individual wallet features.</p>
+              <span className="mt-4 inline-flex items-center gap-2 text-xs font-medium text-red-200">Open network explorer <ArrowUpRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" /></span>
+            </div>
+            <div className="rounded-xl border border-red-400/20 bg-red-500/[0.08] p-3 text-red-300"><Orbit className="h-5 w-5" /></div>
+          </div>
+          <div className="relative mt-5 flex gap-4 border-t border-white/[0.07] pt-3 text-[10px] text-zinc-600">
+            <span>{formatNumber(analysis?.aggregated_tx_graph?.nodes)} wallets</span>
+            <span>{formatNumber(analysis?.aggregated_tx_graph?.edges)} transfer links</span>
+          </div>
+        </Link>
+        <Link href="/process-mining" className="group relative overflow-hidden rounded-xl border border-sky-500/15 bg-gradient-to-br from-[#0b1219] via-[#0c0d12] to-[#090a0d] p-5 transition duration-300 hover:-translate-y-0.5 hover:border-sky-400/35 hover:shadow-[0_12px_45px_rgba(56,189,248,0.07)]">
+          <div className="absolute -right-10 -top-12 h-36 w-36 rounded-full bg-sky-500/[0.06] blur-3xl transition group-hover:bg-sky-500/[0.12]" />
+          <div className="relative flex items-start justify-between gap-4">
+            <div>
+              <span className="text-[9px] tracking-[0.2em] text-sky-300/80">BEHAVIORAL INTELLIGENCE</span>
+              <h3 className="mt-2 text-base font-semibold text-white">View Process Mining Dashboard</h3>
+              <p className="mt-2 max-w-sm text-xs leading-5 text-zinc-500">Review recurring wallet action sequences, directly-follows transitions, first-activity concentration, and intermediary behavior.</p>
+              <span className="mt-4 inline-flex items-center gap-2 text-xs font-medium text-sky-200">Open process analytics <ArrowUpRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" /></span>
+            </div>
+            <div className="rounded-xl border border-sky-400/20 bg-sky-500/[0.07] p-3 text-sky-300"><ChartNoAxesCombined className="h-5 w-5" /></div>
+          </div>
+          <div className="relative mt-5 flex gap-4 border-t border-white/[0.07] pt-3 text-[10px] text-zinc-600">
+            <span>{analysis?.process_mining_result ? "Process evidence available" : "Process evidence preview"}</span>
+            <span>Variants · DFG · Relays</span>
+          </div>
+        </Link>
       </div>
 
       {/* Agent conclusion */}
