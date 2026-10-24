@@ -51,6 +51,7 @@ function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY,
   }
   return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...(isReciprocal ? { strokeWidth: Math.max(2, Number(style?.strokeWidth ?? 1.5)), strokeOpacity: .9 } : {}) }}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${isReciprocal ? "border-sky-300/40 bg-sky-950/95 text-sky-100" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? (isLoop ? "Rework / self-loop frequency" : "Transition frequency") : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{(data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
 }
+const elk = new ELK();
 const nodeTypes = { activity: ActivityNode };
 const edgeTypes = { frequency: FrequencyEdge };
 
@@ -135,7 +136,44 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
   }, [dfg]);
   const [nodes, setNodes, onNodesChange] = useNodesState(built.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(built.edges);
-  useEffect(() => { setNodes(built.nodes); setEdges(built.edges); setSelectedItem(null); }, [built, setNodes, setEdges]);
+  useEffect(() => {
+    let cancelled = false;
+    setEdges(built.edges);
+    setSelectedItem(null);
+    const graph = {
+      id: "root",
+      layoutOptions: {
+        "elk.algorithm": "layered",
+        "elk.direction": "RIGHT",
+        "elk.edgeRouting": "ORTHOGONAL",
+        "elk.spacing.nodeNode": "58",
+        "elk.layered.spacing.nodeNodeBetweenLayers": "110",
+        "elk.layered.spacing.edgeNodeBetweenLayers": "36",
+        "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+        "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+        "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+        "elk.padding": "[top=45,left=45,bottom=45,right=45]"
+      },
+      children: built.nodes.map((node) => {
+        const special = Boolean((node.data as AnyRecord).special);
+        return { id: node.id, width: special ? 66 : 190, height: special ? 66 : 78 };
+      }),
+      edges: built.edges.map((edge) => ({
+        id: edge.id,
+        sources: [edge.source],
+        targets: [edge.target]
+      }))
+    };
+    elk.layout(graph).then((layout) => {
+      if (cancelled) return;
+      const positions = new Map((layout.children ?? []).map((node) => [node.id, { x: node.x ?? 0, y: node.y ?? 0 }]));
+      setNodes(built.nodes.map((node) => ({ ...node, position: positions.get(node.id) ?? node.position })));
+    }).catch((error) => {
+      console.error("ELK graph layout failed:", error);
+      if (!cancelled) setNodes(built.nodes);
+    });
+    return () => { cancelled = true; };
+  }, [built, setNodes, setEdges]);
   const originalEdges = dfg.edges ?? [];
   if (!originalEdges.length) return <section className="rounded-2xl border border-white/[.09] bg-[#0b0c10]/90 p-5"><h3 className="text-sm font-semibold">{title}</h3><p className="mt-1 text-xs text-zinc-600">{description}</p><div className="mt-5"><Empty text="No transitions remain in this DFG. Check event mapping and the frequency filter."/></div></section>;
   return <section className="overflow-hidden rounded-2xl border border-white/[.09] bg-[#0b0c10]/95">
