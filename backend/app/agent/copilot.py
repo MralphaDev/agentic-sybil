@@ -391,6 +391,34 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                             selected = (router.name, args)
                             break
 
+                    # Official Helius MCP docs define these as routed tools whose
+                    # documented action is passed in the "action" argument. If the
+                    # SDK's Tool object does not expose a readable JSON schema, still
+                    # attempt the documented read-only call shape; any server-side
+                    # validation error will be returned and logged below.
+                    if selected is None:
+                        for router_name, action_name in (
+                            ("heliuswallet", "getWalletHistory"),
+                            ("heliustransaction", "getTransactionHistory"),
+                        ):
+                            router = tool_by_name.get(router_name)
+                            if router:
+                                selected = (
+                                    router.name,
+                                    {
+                                        "action": action_name,
+                                        "address": wallet_address,
+                                        "detail": "standard",
+                                    },
+                                )
+                                logger.warning(
+                                    "[Helius MCP] Tool schema unavailable or unrecognized; "
+                                    "trying documented routed call tool=%s action=%s",
+                                    router.name,
+                                    action_name,
+                                )
+                                break
+
                     # Some server versions expose direct tools instead of router actions.
                     if selected is None:
                         candidates = []
