@@ -162,8 +162,8 @@ export default function BubblemapPage() {
       const radius = Math.max(13, Math.min(25, 18 + Math.log2(degree + 1) * 1.15));
       const kind = nodeKind(node);
       const palette = nodePalette[kind];
-      const groupColor = clusterColor(node.cluster_id ?? node.cluster ?? node.cluster_label ?? node.component_id ?? (currentMode === "funding" ? node.first_funder : null));
-      const edgeColor = kind === "cex" || kind === "contract" || kind === "suspicious" || kind === "verified" ? palette.edge : groupColor;
+      const groupColor = clusterColor(node.component_id ?? "unclustered");
+      const edgeColor = groupColor;
       if (active || (currentSearch && isMatch)) {
         ctx.beginPath(); ctx.arc(node.x, node.y, radius + (active ? 12 : 8), 0, Math.PI * 2);
         ctx.fillStyle = palette.glow; ctx.fill();
@@ -203,14 +203,34 @@ export default function BubblemapPage() {
     }).filter((node) => node.id);
     const validIds = new Set(nodes.map((node) => node.id));
     const links: SimLink[] = sourceEdges.map((edge) => ({ source: String(edge.source ?? ""), target: String(edge.target ?? ""), count: number(edge.count) })).filter((edge) => validIds.has(edge.source as string) && validIds.has(edge.target as string));
+    // Assign a stable component id from graph connectivity: every connected component gets one color.
+    const adjacency = new Map<string, string[]>();
+    nodes.forEach((node) => adjacency.set(node.id, []));
+    links.forEach((link) => {
+      const source = link.source as string, target = link.target as string;
+      adjacency.get(source)?.push(target); adjacency.get(target)?.push(source);
+    });
+    const visited = new Set<string>();
+    let componentIndex = 0;
+    for (const node of nodes) {
+      if (visited.has(node.id)) continue;
+      const queue = [node.id], members: string[] = [];
+      visited.add(node.id);
+      while (queue.length) {
+        const id = queue.shift()!; members.push(id);
+        for (const neighbor of adjacency.get(id) ?? []) if (!visited.has(neighbor)) { visited.add(neighbor); queue.push(neighbor); }
+      }
+      const componentId = `component-${componentIndex++}-${members.slice().sort()[0]}`;
+      members.forEach((id) => { const member = nodes.find((item) => item.id === id); if (member) member.component_id = componentId; });
+    }
     nodesRef.current = nodes; linksRef.current = links;
     setNodeCount(nodes.length); setEdgeCount(links.length); setSelected(null);
     viewRef.current = { x: width / 2, y: height / 2, k: 1 };
     const simulation = forceSimulation<SimNode>(nodes)
-      .force("link", forceLink<SimNode, SimLink>(links).id((node) => node.id).distance(mode === "funding" ? 72 : 58).strength(.22))
-      .force("charge", forceManyBody<SimNode>().strength(nodes.length > 1500 ? -22 : -42).distanceMax(280))
+      .force("link", forceLink<SimNode, SimLink>(links).id((node) => node.id).distance(mode === "funding" ? 118 : 104).strength(.12))
+      .force("charge", forceManyBody<SimNode>().strength(nodes.length > 1500 ? -95 : -145).distanceMax(520))
       .force("center", forceCenter<SimNode>(0, 0))
-      .force("collision", forceCollide<SimNode>().radius((node) => Math.max(4, 3 + Math.log2(number(node.in_degree) + number(node.out_degree) + 1))).iterations(2))
+      .force("collision", forceCollide<SimNode>().radius((node) => Math.max(22, 20 + Math.log2(number(node.in_degree) + number(node.out_degree) + 1) * 1.8)).iterations(3))
       .alpha(1).alphaDecay(.035);
     simulation.on("tick", draw);
     simRef.current = simulation;
