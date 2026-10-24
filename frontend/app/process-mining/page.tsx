@@ -22,7 +22,7 @@ function Metric({ title, value, note, icon: Icon }: { title: string; value: stri
 }
 function Empty({ text }: { text: string }) { return <div className="rounded-xl border border-dashed border-white/10 px-4 py-8 text-center text-xs leading-5 text-zinc-600">{text}</div>; }
 
-function ActivityNode({ data }: NodeProps<Node<{ title: string; incoming: number; outgoing: number; start: number; end: number; special?: string }>>) {
+function ActivityNode({ id, data }: NodeProps<Node<{ title: string; incoming: number; outgoing: number; start: number; end: number; special?: string }>>) {
   const isSell = data.title.toLowerCase().includes("sell");
   if (data.special) return <div className={`flex h-[66px] w-[66px] items-center justify-center rounded-full border-2 shadow-[0_0_28px_rgba(248,113,113,.12)] ${data.special === "start" ? "border-emerald-300 bg-emerald-950/70 text-emerald-200" : "border-amber-300 bg-amber-950/70 text-amber-200"}`}>
     {data.special === "start" ? <span className="text-[10px] font-bold tracking-[.12em]">START</span> : <span className="text-[10px] font-bold tracking-[.12em]">END</span>}
@@ -30,10 +30,12 @@ function ActivityNode({ data }: NodeProps<Node<{ title: string; incoming: number
   </div>;
   return <div className={`relative min-w-[174px] rounded-xl border px-4 py-3 shadow-[0_8px_25px_rgba(0,0,0,.28)] ${isSell ? "border-rose-400/90 bg-gradient-to-br from-rose-950/95 to-[#101016]" : "border-slate-600/80 bg-gradient-to-br from-slate-800/95 to-[#101016]"}`}>
     <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
+    <Handle id="loop-target" type="target" position={Position.Right} style={{ top: "34%" }} className="!h-2 !w-2 !border-0 !bg-amber-300"/>
     <div className={`text-center text-xs font-semibold ${isSell ? "text-rose-200" : "text-slate-100"}`}>{data.title}</div>
     <div className="mt-1.5 text-center font-mono text-[10px] text-slate-400">{data.incoming.toLocaleString()} in · {data.outgoing.toLocaleString()} out</div>
     {typeof (data as AnyRecord).rework === "number" && Number((data as AnyRecord).rework) > 0 && <div className="mt-2 rounded-md border border-amber-400/25 bg-amber-400/[.08] px-2 py-1 text-center text-[10px] font-medium text-amber-200">Rework time: {Number((data as AnyRecord).rework).toLocaleString()}</div>}
     <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
+    <Handle id="loop-source" type="source" position={Position.Right} style={{ top: "66%" }} className="!h-2 !w-2 !border-0 !bg-amber-300"/>
   </div>;
 }
 function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null; reciprocal?: boolean; selfLoop?: boolean }>>) {
@@ -45,10 +47,10 @@ function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY,
   });
   // A dedicated loop path keeps repeated activity visible instead of drawing
   // a zero-length edge through the activity card.
-  const loopPath = `M ${sourceX},${sourceY} C ${sourceX + 72},${sourceY - 86} ${targetX - 72},${targetY - 86} ${targetX},${targetY}`;
+  const loopPath = `M ${sourceX},${sourceY} C ${sourceX + 58},${sourceY - 10} ${targetX + 58},${targetY + 10} ${targetX},${targetY}`;
   const path = selfLoop ? loopPath : normalPath;
-  const labelX = selfLoop ? (sourceX + targetX) / 2 : normalLabelX;
-  const labelY = selfLoop ? Math.min(sourceY, targetY) - 48 : normalLabelY;
+  const labelX = selfLoop ? Math.max(sourceX, targetX) + 48 : normalLabelX;
+  const labelY = selfLoop ? (sourceY + targetY) / 2 : normalLabelY;
   return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...(isReciprocal ? { strokeWidth: Math.max(2, Number(style?.strokeWidth ?? 1.5)), strokeOpacity: .9 } : {}) }}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${selfLoop ? "border-amber-300/40 bg-amber-950/95 text-amber-100" : isReciprocal ? "border-sky-300/40 bg-sky-950/95 text-sky-100" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? (selfLoop ? "Self-loop / rework frequency" : "Transition frequency") : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{(data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
 }
 const nodeTypes = { activity: ActivityNode };
@@ -120,7 +122,7 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
     const maxCount = Math.max(1, ...edges.map((item) => item.count), ...Object.values(starts).map((v) => number(v) ?? 0), ...Object.values(ends).map((v) => number(v) ?? 0));
     const flowEdges: FlowEdge[] = [
       ...allEdges.map((edge, index) => ({
-        id: `transition-${index}-${edge.source}-${edge.target}`, source: edge.source, target: edge.target, type: "frequency",
+        id: `transition-${index}-${edge.source}-${edge.target}`, source: edge.source, target: edge.target, ...(edge.source === edge.target ? { sourceHandle: "loop-source", targetHandle: "loop-target" } : {}), type: "frequency",
         markerEnd: { type: MarkerType.ArrowClosed, color: edge.source === edge.target ? "#fbbf24" : "#fda4af", width: 15, height: 15 },
         style: { stroke: edge.source === edge.target ? "#fbbf24" : "#fb7185", strokeOpacity: .82, strokeWidth: 1.1 + Math.sqrt(Math.max(0, edge.count) / maxCount) * 3 },
         data: { count: edge.count, probability: number(edge.transition_probability ?? edge.probability), selfLoop: edge.source === edge.target, reciprocal: edge.source !== edge.target && edges.some((other) => other.source === edge.target && other.target === edge.source) },
