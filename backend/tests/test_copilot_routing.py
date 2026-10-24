@@ -17,6 +17,25 @@ class CopilotRoutingTests(unittest.TestCase):
         query = _validate_sql("SELECT wallet_address, mint, amount FROM public.wallet_token_holdings LIMIT 5")
         self.assertIn("wallet_token_holdings", query)
 
+    def test_ctes_are_allowed_when_their_physical_tables_are_allowlisted(self):
+        query = _validate_sql(
+            "WITH seller_counts AS ("
+            "SELECT wallet_address, COUNT(DISTINCT signature) AS sell_count "
+            "FROM public.wallet_event_log "
+            "WHERE translated_type = 'sell' "
+            "GROUP BY wallet_address) "
+            "SELECT wallet_address, sell_count FROM seller_counts ORDER BY sell_count DESC LIMIT 5"
+        )
+        self.assertIn("WITH seller_counts", query)
+        self.assertIn("LIMIT 5", query)
+
+    def test_requested_limit_is_preserved_when_within_safety_cap(self):
+        query = _validate_sql(
+            "SELECT wallet_address, COUNT(*) AS event_count "
+            "FROM public.wallet_event_log GROUP BY wallet_address LIMIT 5"
+        )
+        self.assertTrue(query.upper().endswith("LIMIT 5"))
+
 
 class FundingGoalClassificationTests(unittest.IsolatedAsyncioTestCase):
     async def test_indirect_predecessor_wording_uses_semantic_classifier(self):
