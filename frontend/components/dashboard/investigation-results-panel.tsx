@@ -38,6 +38,7 @@ type Analysis = {
   first_fund_graph?: GraphSummary;
   aggregated_tx_graph?: GraphSummary;
   wallet_features?: unknown;
+  process_mining_result?: Record<string, unknown>;
   investigation?: Investigation;
 };
 
