@@ -2,7 +2,7 @@
 
 import unittest
 
-from app.agent.copilot.router import router
+from app.agent.copilot.routes import router
 from app.agent.copilot.service import _is_funding_question
 from app.agent.copilot.database import _validate_sql
 
