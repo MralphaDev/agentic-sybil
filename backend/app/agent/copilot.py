@@ -287,8 +287,24 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                         properties = schema.get("properties") or {}
                         required = schema.get("required") or []
                         args: dict[str, Any] = {}
-                        if "action" in properties and action_name:
-                            args["action"] = action_name
+                        if "action" in properties:
+                            action_enum = properties["action"].get("enum") or []
+                            if action_name not in action_enum and action_enum:
+                                # Tool versions can rename actions. Choose only an action
+                                # explicitly advertised by the running server's schema.
+                                aliases = {
+                                    "getTransactionHistory": (
+                                        "getTransactionHistory", "getTransactionsByAddress",
+                                        "getTransactionsForAddress", "getWalletHistory",
+                                    )
+                                }
+                                action_name = next(
+                                    (candidate for candidate in aliases.get(action_name, (action_name,))
+                                     if candidate in action_enum),
+                                    action_enum[0] if action_enum else action_name,
+                                )
+                            if action_name:
+                                args["action"] = action_name
                         for key, value in preferred.items():
                             if key in properties:
                                 args[key] = value
@@ -384,8 +400,23 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                     serialized = json.dumps(result.content, ensure_ascii=False, default=str)
                     return name, serialized[:7000]
     except Exception as exc:
-        # Preserve a concise diagnostic instead of silently hiding MCP startup/RPC failures.
-        return ("HELIUS_MCP_ERROR", f"{type(exc).__name__}: {str(exc)[:1200]}")
+        # ExceptionGroup from anyio/asyncio often hides the useful nested cause in
+        # its default string ("unhandled errors in a TaskGroup"). Flatten it so the
+        # caller can distinguish startup, transport, schema, and Helius API failures.
+        def describe_exception(error: BaseException, depth: int = 0) -> list[str]:
+            prefix = "  " * depth
+            lines = [f"{prefix}{type(error).__name__}: {str(error)[:500]}"]
+            nested = getattr(error, "exceptions", None)
+            if nested:
+                for child in nested[:5]:
+                    lines.extend(describe_exception(child, depth + 1))
+            cause = getattr(error, "__cause__", None)
+            if cause and not nested:
+                lines.extend(describe_exception(cause, depth + 1))
+            return lines
+
+        detail = "\\n".join(describe_exception(exc))[:1800]
+        return ("HELIUS_MCP_ERROR", detail)
 
 
 async def _classify_intent(question: str) -> str:
