@@ -235,16 +235,32 @@ def _get_tool_schema(tool: Any) -> dict[str, Any]:
     schema = getattr(tool, "inputSchema", None)
     if schema is None:
         schema = getattr(tool, "input_schema", None)
-    if schema is None:
-        dump = getattr(tool, "model_dump", None)
+
+    def as_dict(value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        dump = getattr(value, "model_dump", None)
         if callable(dump):
             try:
                 data = dump(by_alias=True)
             except TypeError:
                 data = dump()
             if isinstance(data, dict):
-                schema = data.get("inputSchema") or data.get("input_schema")
-    return schema if isinstance(schema, dict) else {}
+                return data
+        return {}
+
+    result = as_dict(schema)
+    if result:
+        return result
+    dump = getattr(tool, "model_dump", None)
+    if callable(dump):
+        try:
+            data = dump(by_alias=True)
+        except TypeError:
+            data = dump()
+        if isinstance(data, dict):
+            return as_dict(data.get("inputSchema") or data.get("input_schema"))
+    return {}
 
 
 async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, str] | None:
@@ -415,10 +431,27 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                             selected = (tool_name, arguments)
 
                     if selected is None:
+                        # Include schema diagnostics for the two expected router tools so
+                        # the next failure identifies the live MCP shape instead of guessing.
+                        diagnostics = []
+                        for tool in tools:
+                            if tool.name.lower() in {"heliuswallet", "heliustransaction"}:
+                                schema = _get_tool_schema(tool)
+                                diagnostics.append({
+                                    "tool": tool.name,
+                                    "schema_keys": list(schema.keys()),
+                                    "property_names": list((schema.get("properties") or {}).keys()),
+                                    "required": schema.get("required") or [],
+                                })
                         available = ", ".join(tool.name for tool in tools[:30])
+                        logger.error(
+                            "[Helius MCP] No compatible history tool. Schema diagnostics: %s",
+                            json.dumps(diagnostics, ensure_ascii=False, default=str),
+                        )
                         return (
                             "HELIUS_MCP_ERROR",
-                            f"No compatible read-only transaction-history tool found. Available tools: {available}",
+                            f"No compatible read-only transaction-history tool found. Available tools: {available}. "
+                            f"Schema diagnostics: {json.dumps(diagnostics, ensure_ascii=False, default=str)[:2500]}",
                         )
                     name, arguments = selected
                     logger.info(
