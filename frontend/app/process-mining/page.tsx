@@ -173,7 +173,17 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
       // ELK returns absolute edge sections and bend points. Use those exact
       // coordinates in the custom React Flow edge instead of recalculating paths.
       const routedById = new Map<string, { points: RoutedPoint[]; labelPoint: RoutedPoint }>();
-      for (const edge of layout.edges ?? []) {
+      // The inferred graph input type omits ELK's output-only section geometry,
+      // so narrow the returned edges to the output shape before reading sections.
+      const routedEdges = layout.edges as Array<{
+        id: string;
+        sections?: Array<{
+          startPoint?: RoutedPoint;
+          endPoint?: RoutedPoint;
+          bendPoints?: RoutedPoint[];
+        }>;
+      }> | undefined;
+      for (const edge of routedEdges ?? []) {
         const section = edge.sections?.[0];
         if (!section?.startPoint || !section?.endPoint) continue;
         const points = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint].map((point) => ({ x: point.x, y: point.y }));
