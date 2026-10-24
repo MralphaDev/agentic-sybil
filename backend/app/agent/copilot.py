@@ -322,9 +322,12 @@ async def _answer_report_question(question: str, context_text: str) -> AsyncIter
                     yield _emit("token", {"content": part["text"]})
 
 async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
+    # A wallet address is an explicit request for wallet-specific evidence.
+    # Do not let the LLM intent classifier route it to report/general and skip lookups.
+    has_wallet_address = bool(re.search(r"(?<![1-9A-HJ-NP-Za-km-z])[1-9A-HJ-NP-Za-km-z]{32,44}(?![1-9A-HJ-NP-Za-km-z])", request.message))
     # Confirm intent first. Casual/general requests must not touch DB or Helius.
     try:
-        intent = await _classify_intent(request.message)
+        intent = "lookup" if has_wallet_address else await _classify_intent(request.message)
     except Exception:
         casual = re.compile(
             r"^(hi|hello|hey|thanks|thank you|thx|你好|嗨|哈喽|谢谢|谢了|在吗|早上好|晚安|哈哈)[!！?？。\s]*$",
@@ -386,7 +389,8 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
 
     evidence = {
         "postgres_rows": rows,
-        "postgres_error": sql_error,
+        # Never expose raw SQL validation/database errors to the answer model.
+        "postgres_lookup_failed": bool(sql_error),
         "helius_tool": helius_result[0] if helius_result else None,
         "helius_result": helius_result[1] if helius_result else None,
     }
@@ -400,9 +404,13 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
                 f"User question:\n{request.message}\n\n"
                 f"Evidence returned by tools (may be empty):\n"
                 f"{json.dumps(evidence, ensure_ascii=False, default=str)[:12000]}\n\n"
-                "Answer the question directly. If database and RPC evidence are unavailable, "
-                "say so clearly and offer a specific query/address that would make it answerable. "
-                "Do not claim RPC was queried successfully unless a tool result is present."
+                "Answer the user's question directly using returned evidence. Never show or suggest SQL, "
+                "database queries, code, internal validation messages, or implementation details. "
+                "If PostgreSQL has no matching rows or its query fails, use the Helius result if present. "
+                "If both sources fail, state briefly that the lookup failed and summarize the source failure "
+                "without exposing SQL or internal validation text. Never claim Helius succeeded unless a "
+                "successful Helius tool result is present. A Helius tool result named HELIUS_MCP_ERROR is a failure, "
+                "not on-chain evidence."
             )),
         ]
         async for chunk in _get_llm(MAX_OUTPUT_TOKENS).astream(messages):
