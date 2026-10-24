@@ -34,6 +34,10 @@ from app.process_mining.wallet_age_distribution.first_activity_concentration imp
 
 
 PROCESS_MINING_STEPS: dict[str, tuple[str, str]] = {
+    "12_00_load_dataframe": (
+        "Loading process event data",
+        "Loading wallet events into a DataFrame for Process Mining.",
+    ),
     "12_01_map_event_actions": (
         "Mapping wallet actions",
         "Translating raw on-chain events into process-mining actions.",
@@ -169,7 +173,11 @@ def run_process_mining(
         print("No events found.")
         return {}
 
-    df = pd.DataFrame(events)
+    df = _timed_step(
+        "12_00_load_dataframe",
+        pd.DataFrame,
+        events,
+    )
 
     df["action"] = _timed_step(
         "12_01_map_event_actions",
