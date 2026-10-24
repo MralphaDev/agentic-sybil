@@ -262,37 +262,66 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                     ]
                     if not tools:
                         return ("HELIUS_MCP_ERROR", "Helius MCP started but exposed no read-only tools.")
-                    tool_catalog = [
-                        {"name": tool.name, "description": (tool.description or "")[:350],
-                         "inputSchema": tool.inputSchema}
-                        for tool in tools
-                    ]
-                    selection = await _get_llm(200).ainvoke([
-                        SystemMessage(content=(
-                            "Choose exactly one suitable read-only Helius MCP tool when the user asks "
-                            "for live wallet or transaction data. Return only JSON {\"name\":\"tool name\",\"arguments\":{...}}. "
-                            "Only use arguments supported by that tool's input schema. For a wallet's "
-                            "transaction history/pattern, prefer the transaction-history action/tool, "
-                            "use the supplied wallet address, and honor a requested limit up to 50. "
-                            "Never choose tools that write, sign, send, stake, swap, or modify state. "
-                            "If no suitable read-only tool exists, return {\"name\":\"\",\"arguments\":{}}."
-                        )),
-                        HumanMessage(content=(
-                            f"Question: {question}\nInvestigation context: {context_text[:2500]}\n"
-                            f"Available read-only tools: {json.dumps(tool_catalog, ensure_ascii=False)}"
-                        )),
-                    ])
-                    raw = selection.content
-                    if isinstance(raw, list):
-                        raw = "".join(part.get("text", "") for part in raw if isinstance(part, dict))
-                    match = re.search(r"\{.*\}", str(raw), re.DOTALL)
-                    if not match:
-                        return ("HELIUS_MCP_ERROR", "DeepSeek could not select a Helius tool from the available tool schemas.")
-                    chosen = json.loads(match.group(0))
-                    name = chosen.get("name")
-                    if name not in {tool.name for tool in tools}:
-                        return ("HELIUS_MCP_ERROR", "Selected Helius tool name was not present in the live tool list.")
-                    result = await session.call_tool(name, chosen.get("arguments") or {})
+                    wallet_match = re.search(
+                        r"(?<![1-9A-HJ-NP-Za-km-z])([1-9A-HJ-NP-Za-km-z]{32,44})(?![1-9A-HJ-NP-Za-km-z])",
+                        question,
+                    )
+                    wallet_address = wallet_match.group(1) if wallet_match else None
+                    if not wallet_address:
+                        return ("HELIUS_MCP_ERROR", "No valid Solana wallet address was found for the Helius lookup.")
+
+                    # Select a read-only transaction tool from its live MCP schema rather than
+                    # asking another LLM call to guess a tool name and argument shape.
+                    candidates = []
+                    for tool in tools:
+                        name_text = f"{tool.name} {tool.description or ''}".lower()
+                        schema = tool.inputSchema or {}
+                        properties = schema.get("properties") or {}
+                        required = schema.get("required") or []
+                        address_key = next((
+                            key for key in properties
+                            if re.search(r"(^|_)(address|wallet|account|owner|pubkey|publickey)(_|$)", key, re.I)
+                            or key.lower() in {"address", "walletaddress", "accountaddress", "publickey", "pubkey"}
+                        ), None)
+                        if not address_key:
+                            continue
+                        if not re.search(r"transaction|signature|history|activity|transfer", name_text):
+                            continue
+                        arguments = {}
+                        usable = True
+                        for key in required:
+                            if key == address_key:
+                                arguments[key] = wallet_address
+                            elif key in properties and properties[key].get("default") is not None:
+                                arguments[key] = properties[key]["default"]
+                            elif key in properties and properties[key].get("enum"):
+                                arguments[key] = properties[key]["enum"][0]
+                            elif re.search(r"limit|max_results|page_size", key, re.I):
+                                arguments[key] = min(50, int(properties[key].get("maximum", 50)))
+                            else:
+                                usable = False
+                                break
+                        if not usable:
+                            continue
+                        if address_key not in arguments:
+                            arguments[address_key] = wallet_address
+                        limit_key = next((key for key in properties if re.search(r"^(limit|max_results|page_size)$", key, re.I)), None)
+                        if limit_key:
+                            maximum = properties[limit_key].get("maximum", 50)
+                            arguments[limit_key] = min(50, int(maximum))
+                        score = 0
+                        score += 5 if "transaction" in tool.name.lower() else 0
+                        score += 4 if "history" in tool.name.lower() else 0
+                        score += 3 if "signature" in tool.name.lower() else 0
+                        score += 2 if "address" in tool.name.lower() else 0
+                        candidates.append((score, tool.name, arguments))
+
+                    if not candidates:
+                        available = ", ".join(tool.name for tool in tools[:30])
+                        return ("HELIUS_MCP_ERROR", f"No compatible read-only transaction-history tool found. Available tools: {available}")
+                    candidates.sort(key=lambda item: item[0], reverse=True)
+                    _, name, arguments = candidates[0]
+                    result = await session.call_tool(name, arguments)
                     if getattr(result, "isError", False):
                         return ("HELIUS_MCP_ERROR", json.dumps(result.content, ensure_ascii=False, default=str)[:1500])
                     serialized = json.dumps(result.content, ensure_ascii=False, default=str)
