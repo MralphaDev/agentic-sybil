@@ -149,8 +149,8 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
     # Route this common database question to a deterministic aggregate query.
     token_seller_query = bool(
         extracted_address
-        and re.search(r"\\b(sell|sold|seller|selling|sell off|dumped)\\b", request.message, re.IGNORECASE)
-        and re.search(r"\\b(wallets?|token|mint|coin|holders?)\\b", request.message, re.IGNORECASE)
+        and re.search(r"\b(sell|sold|seller|selling|sell off|dumped)\b", request.message, re.IGNORECASE)
+        and re.search(r"\b(wallets?|token|mint|coin|holders?)\b", request.message, re.IGNORECASE)
     )
     wallet_address = None if token_seller_query else extracted_address
     database_has_transaction_rows = False
