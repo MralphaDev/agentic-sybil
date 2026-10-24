@@ -325,32 +325,35 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
 
                     tool_by_name = {tool.name.lower(): tool for tool in tools}
                     selected = None
-                    # Official helius-mcp exposes getTransactionHistory through heliusTransaction.
-                    transaction_router = tool_by_name.get("heliustransaction")
-                    if transaction_router:
-                        schema = transaction_router.inputSchema or {}
+                    # Current Helius docs list wallet history under heliusWallet.getWalletHistory
+                    # and enhanced address history under heliusTransaction.getTransactionHistory.
+                    # Try the documented wallet-history route first; then transaction history.
+                    for router_name, action_name in (
+                        ("heliuswallet", "getWalletHistory"),
+                        ("heliustransaction", "getTransactionHistory"),
+                    ):
+                        router = tool_by_name.get(router_name)
+                        if not router:
+                            continue
+                        schema = router.inputSchema or {}
                         properties = schema.get("properties") or {}
-                        for action_name, preferred in (
-                            ("getTransactionHistory", {
-                                "address": wallet_address,
-                                "mode": "parsed",
-                                "limit": 10,
-                                "detail": "standard",
-                            }),
-                            ("getTransactionHistory", {
-                                "address": wallet_address,
-                                "mode": "signatures",
-                                "limit": 10,
-                                "detail": "standard",
-                            }),
-                        ):
-                            if "action" in properties and any(
-                                key in properties for key in ("address", "walletAddress", "accountAddress")
-                            ):
-                                args = schema_args(transaction_router, action_name, preferred)
-                                if args is not None:
-                                    selected = (transaction_router.name, args)
-                                    break
+                        address_key = next((
+                            key for key in properties
+                            if key.lower() in {"address", "walletaddress", "accountaddress", "owneraddress", "pubkey", "publickey"}
+                        ), None)
+                        if not address_key or "action" not in properties:
+                            continue
+                        preferred = {
+                            address_key: wallet_address,
+                            "detail": "standard",
+                        }
+                        for key in properties:
+                            if re.search(r"^(limit|max_results|page_size)$", key, re.I):
+                                preferred[key] = min(5, int(properties[key].get("maximum", 5)))
+                        args = schema_args(router, action_name, preferred)
+                        if args is not None:
+                            selected = (router.name, args)
+                            break
 
                     # Some server versions expose direct tools instead of router actions.
                     if selected is None:
@@ -375,7 +378,11 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                             for key in properties:
                                 if re.search(r"^(limit|max_results|page_size)$", key, re.I):
                                     preferred[key] = min(50, int(properties[key].get("maximum", 50)))
-                            inferred_action = "getTransactionHistory" if "action" in properties and "transaction" in name_text else ""
+                            inferred_action = (
+                                "getWalletHistory" if "action" in properties and "heliuswallet" in tool.name.lower()
+                                else "getTransactionHistory" if "action" in properties and "transaction" in name_text
+                                else ""
+                            )
                             args = schema_args(tool, inferred_action, preferred)
                             if args is not None:
                                 score = 5 if "transaction" in name_text else 0
