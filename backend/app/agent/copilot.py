@@ -90,7 +90,7 @@ def _validate_sql(sql: str) -> str:
         raise ValueError("Only SELECT queries are allowed.")
     if DISALLOWED_SQL.search(query):
         raise ValueError("The generated SQL contains a prohibited operation.")
-    if re.search(r"\b(select\s+\*)", query, re.IGNORECASE):
+    if re.search(r"\bselect\s+\*|\b[a-z_][a-z0-9_]*\.\*", query, re.IGNORECASE):
         raise ValueError("SELECT * is not allowed.")
     tables = re.findall(
         r"\b(?:from|join)\s+(?:public\.)?([a-z_][a-z0-9_]*)",
