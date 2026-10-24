@@ -73,7 +73,7 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
       while (queue.length) {
         const current = queue.shift()!;
         for (const target of adjacency.get(current) ?? []) {
-          if (!rank.has(target)) { rank.set(target, (rank.get(current) ?? 1) + 1; queue.push(target); }
+          if (!rank.has(target)) { rank.set(target, (rank.get(current) ?? 1) + 1); queue.push(target); }
         }
       }
     };
