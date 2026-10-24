@@ -1,6 +1,7 @@
 "use client";
 
 import "@xyflow/react/dist/style.css";
+import ELK from "elkjs/lib/elk.bundled.js";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ReactFlow, Background, Controls, MiniMap, Handle, Position, MarkerType, type Node, type Edge as FlowEdge, type NodeProps, type EdgeProps, BaseEdge, EdgeLabelRenderer, getBezierPath, useNodesState, useEdgesState } from "@xyflow/react";
@@ -49,7 +50,7 @@ function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY,
     labelX = (sourceX + targetX) / 2;
     labelY = (sourceY + targetY) / 2 + offset;
   }
-  return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...(isReciprocal ? { strokeWidth: Math.max(2, Number(style?.strokeWidth ?? 1.5)), strokeOpacity: .9 } : {}) }}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${isReciprocal ? "border-sky-300/40 bg-sky-950/95 text-sky-100" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? (isLoop ? "Rework / self-loop frequency" : "Transition frequency") : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{(data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
+  return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...(isReciprocal ? { strokeWidth: Math.max(2, Number(style?.strokeWidth ?? 1.5)), strokeOpacity: .9 } : {}) }}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${isReciprocal ? "border-sky-300/40 bg-sky-950/95 text-sky-100" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? "Transition frequency" : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{(data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
 }
 const elk = new ELK();
 const nodeTypes = { activity: ActivityNode };
@@ -166,9 +167,9 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
     };
     elk.layout(graph).then((layout) => {
       if (cancelled) return;
-      const positions = new Map((layout.children ?? []).map((node) => [node.id, { x: node.x ?? 0, y: node.y ?? 0 }]));
-      setNodes(built.nodes.map((node) => ({ ...node, position: positions.get(node.id) ?? node.position })));
-    }).catch((error) => {
+      const positions = new Map<string, { x: number; y: number }>((layout.children ?? []).map((node) => [node.id, { x: node.x ?? 0, y: node.y ?? 0 }]));
+      setNodes(built.nodes.map((node): Node => ({ ...node, position: positions.get(node.id) ?? node.position })));
+    }).catch((error: unknown) => {
       console.error("ELK graph layout failed:", error);
       if (!cancelled) setNodes(built.nodes);
     });
