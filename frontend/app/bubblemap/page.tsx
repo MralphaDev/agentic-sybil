@@ -23,6 +23,21 @@ const tour = [
 const shortAddress = (value: string) => value.length > 18 ? value.slice(0, 7) + "…" + value.slice(-5) : value;
 const number = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : 0;
 const display = (value: unknown) => value === null || value === undefined || value === "" ? "—" : String(value);
+const nodeKind = (node: AnyRecord) => {
+  const text = [node.kind, node.category, node.label, node.forensic_status, node.entity_type, node.type].filter(Boolean).join(" ").toLowerCase();
+  if (node.is_exchange === true || node.is_cex === true || /\\bcex\\b|exchange/.test(text)) return "cex";
+  if (node.is_contract === true || /contract|program account/.test(text)) return "contract";
+  if (/sybil|suspicious|high.?risk/.test(text)) return "suspicious";
+  if (/verified|benign|normal/.test(text)) return "verified";
+  return "wallet";
+};
+const nodePalette: Record<string, { edge: string; inner: string; glow: string; label: string }> = {
+  cex: { edge: "#facc15", inner: "#854d0e", glow: "rgba(250,204,21,.28)", label: "CEX" },
+  contract: { edge: "#34d399", inner: "#065f46", glow: "rgba(52,211,153,.25)", label: "CONTRACT" },
+  suspicious: { edge: "#fb7185", inner: "#9f1239", glow: "rgba(251,113,133,.28)", label: "SUSPECT" },
+  verified: { edge: "#38bdf8", inner: "#075985", glow: "rgba(56,189,248,.24)", label: "VERIFIED" },
+  wallet: { edge: "#a78bfa", inner: "#4c1d95", glow: "rgba(167,139,250,.2)", label: "WALLET" },
+};
 
 export default function BubblemapPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -118,16 +133,37 @@ export default function BubblemapPage() {
       const isMatch = !currentSearch || visible.has(node.id);
       const active = currentSelected === node.id;
       const degree = number(node.in_degree) + number(node.out_degree);
-      const radius = Math.max(2.2, Math.min(8.5, 2.1 + Math.log2(degree + 1) * 1.2));
-      const color = currentMode === "funding" ? (degree >= 4 ? "#fb7185" : "#f59e0b") : (degree >= 5 ? "#fb7185" : degree >= 2 ? "#38bdf8" : "#8b929f");
-      if (active) { ctx.beginPath(); ctx.arc(node.x, node.y, radius + 8, 0, Math.PI * 2); ctx.strokeStyle = "rgba(254,202,202,.8)"; ctx.lineWidth = 1.2 / view.k; ctx.setLineDash([3 / view.k, 4 / view.k]); ctx.stroke(); ctx.setLineDash([]); }
-      if (isMatch && currentSearch) { ctx.beginPath(); ctx.arc(node.x, node.y, radius + 6, 0, Math.PI * 2); ctx.fillStyle = "rgba(248,113,113,.15)"; ctx.fill(); }
-      ctx.beginPath(); ctx.arc(node.x, node.y, radius + (active ? 1.8 : 0), 0, Math.PI * 2);
-      ctx.fillStyle = isMatch ? color : "rgba(100,110,125,.13)"; ctx.globalAlpha = isMatch ? (active ? 1 : .78) : .22; ctx.fill(); ctx.globalAlpha = 1;
-      ctx.strokeStyle = active ? "#fff" : color; ctx.lineWidth = (active ? 1.4 : .45) / view.k; ctx.stroke();
-      if (active || (currentSearch && isMatch) || (view.k > 1.4 && nodes.length < 300)) {
-        ctx.font = `${active ? 11 : 9}px ui-monospace, SFMono-Regular, monospace`;
-        ctx.fillStyle = active ? "#fff" : "#b9c0cb"; ctx.fillText(shortAddress(node.id), node.x + radius + 5, node.y + 3);
+      const radius = Math.max(7, Math.min(21, 7 + Math.log2(degree + 1) * 2.4));
+      const kind = nodeKind({ ...node, ...(features[node.id] ?? {}) });
+      const palette = nodePalette[kind];
+      const edgeColor = currentMode === "funding" && kind === "wallet" ? "#facc15" : palette.edge;
+      if (active || (currentSearch && isMatch)) {
+        ctx.beginPath(); ctx.arc(node.x, node.y, radius + (active ? 12 : 8), 0, Math.PI * 2);
+        ctx.fillStyle = palette.glow; ctx.fill();
+        ctx.strokeStyle = active ? "#fff" : edgeColor; ctx.lineWidth = 1.4 / view.k; ctx.stroke();
+      }
+      // Glassy bubble: saturated gradient rim, translucent dark core.
+      const bubble = ctx.createRadialGradient(node.x - radius * .36, node.y - radius * .4, radius * .08, node.x, node.y, radius * 1.2);
+      bubble.addColorStop(0, isMatch ? palette.edge + "d9" : "rgba(40,45,56,.3)");
+      bubble.addColorStop(.42, isMatch ? palette.inner + "c9" : "rgba(12,14,20,.5)");
+      bubble.addColorStop(1, "rgba(4,5,9,.94)");
+      ctx.beginPath(); ctx.arc(node.x, node.y, radius + (active ? 2 : 0), 0, Math.PI * 2);
+      ctx.fillStyle = bubble; ctx.globalAlpha = isMatch ? .96 : .18; ctx.fill(); ctx.globalAlpha = 1;
+      ctx.strokeStyle = active ? "#ffffff" : edgeColor; ctx.lineWidth = (active ? 2 : 1.2) / view.k; ctx.stroke();
+      ctx.beginPath(); ctx.arc(node.x - radius * .3, node.y - radius * .34, Math.max(1.4, radius * .17), 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,.58)"; ctx.fill();
+      if (kind === "cex" || kind === "contract") {
+        const tag = kind === "cex" ? "CEX" : "CONTRACT";
+        ctx.font = `bold ${Math.max(8, 9 / Math.min(1.5, view.k))}px ui-monospace, monospace`;
+        const tagWidth = ctx.measureText(tag).width + 10;
+        ctx.fillStyle = "rgba(3,5,9,.9)"; ctx.fillRect(node.x - tagWidth / 2, node.y + radius * .42, tagWidth, 13 / view.k);
+        ctx.strokeStyle = edgeColor; ctx.lineWidth = .7 / view.k; ctx.strokeRect(node.x - tagWidth / 2, node.y + radius * .42, tagWidth, 13 / view.k);
+        ctx.fillStyle = edgeColor; ctx.fillText(tag, node.x - tagWidth / 2 + 5, node.y + radius * .42 + 9 / view.k);
+      }
+      if (active || (currentSearch && isMatch) || (view.k > .85 && nodes.length < 1000)) {
+        ctx.font = `600 ${active ? 12 : 10}px ui-monospace, SFMono-Regular, monospace`;
+        ctx.lineWidth = 3 / view.k; ctx.strokeStyle = "rgba(4,5,9,.9)"; ctx.strokeText(shortAddress(node.id), node.x + radius + 7, node.y + 3);
+        ctx.fillStyle = active ? "#fff" : "#cbd5e1"; ctx.fillText(shortAddress(node.id), node.x + radius + 7, node.y + 3);
       }
     }
     ctx.restore();
@@ -172,7 +208,7 @@ export default function BubblemapPage() {
     return { x: (event.clientX - rect.left - viewRef.current.x) / viewRef.current.k, y: (event.clientY - rect.top - viewRef.current.y) / viewRef.current.k };
   };
   const hitNode = (x: number, y: number) => {
-    let best: SimNode | null = null, distance = 14 / viewRef.current.k;
+    let best: SimNode | null = null, distance = 24 / viewRef.current.k;
     for (const node of nodesRef.current) { if (node.x == null || node.y == null) continue; const d = Math.hypot(node.x - x, node.y - y); if (d < distance) { best = node; distance = d; } }
     return best;
   };
@@ -193,8 +229,18 @@ export default function BubblemapPage() {
   const onPointerUp = () => {
     const drag = dragRef.current; if (!drag) return;
     if (drag.kind === "node" && drag.node) {
-      if (!drag.moved) setSelected(drag.node.id);
-      else { drag.node.fx = null; drag.node.fy = null; }
+      if (!drag.moved) {
+        setSelected(drag.node.id);
+        const canvas = canvasRef.current;
+        if (canvas && drag.node.x != null && drag.node.y != null) {
+          const rect = canvas.getBoundingClientRect();
+          const view = viewRef.current;
+          const targetK = Math.max(view.k, 1.8);
+          view.x = rect.width / 2 - drag.node.x * targetK;
+          view.y = rect.height / 2 - drag.node.y * targetK;
+          view.k = Math.min(3.2, targetK);
+        }
+      } else { drag.node.fx = null; drag.node.fy = null; }
     }
     simRef.current?.alphaTarget(0); dragRef.current = null; draw();
   };
@@ -225,7 +271,7 @@ export default function BubblemapPage() {
       <div className="flex flex-col overflow-hidden rounded-xl border border-white/10 bg-[#090a0e]/85 backdrop-blur">
         <button onClick={() => zoom(1.2)} className="p-3 text-zinc-400 hover:text-white" title="Zoom in"><Plus size={15}/></button><div className="h-px bg-white/10"/><button onClick={() => zoom(.83)} className="p-3 text-zinc-400 hover:text-white" title="Zoom out"><Minus size={15}/></button><div className="h-px bg-white/10"/><button onClick={() => { viewRef.current = { x: (hostRef.current?.clientWidth ?? window.innerWidth) / 2, y: (hostRef.current?.clientHeight ?? window.innerHeight) / 2, k: 1 }; draw(); }} className="p-3 text-zinc-400 hover:text-white" title="Reset view"><Maximize2 size={14}/></button>
       </div>
-      <div className="rounded-xl border border-white/10 bg-[#090a0e]/85 px-3 py-2.5 text-[10px] text-zinc-500 backdrop-blur"><div className="mb-1.5 tracking-[.16em] text-zinc-400">NODE KEY</div><div className="flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-rose-400"/> High connectivity</div><div className="mt-1 flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-sky-400"/> Connected wallet</div><div className="mt-1 flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-zinc-500"/> Peripheral wallet</div></div>
+      <div className="rounded-xl border border-white/10 bg-[#090a0e]/85 px-3 py-2.5 text-[10px] text-zinc-500 backdrop-blur"><div className="mb-1.5 tracking-[.16em] text-zinc-400">NODE KEY</div><div className="flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-yellow-400"/> CEX / exchange</div><div className="mt-1 flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-emerald-400"/> Contract / program</div><div className="mt-1 flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-rose-400"/> Suspicious / Sybil</div><div className="mt-1 flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-sky-400"/> Verified / benign</div><div className="mt-1 flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-violet-400"/> Other wallet</div></div>
     </div>
     <div className="absolute bottom-5 right-5 z-20 flex items-center gap-2 rounded-xl border border-white/10 bg-[#090a0e]/85 px-3 py-2 text-[10px] text-zinc-500 backdrop-blur"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400"/>{canvasReady ? "FORCE SIMULATION ACTIVE" : "INITIALIZING"}<span className="text-zinc-700">·</span>{mode === "funding" ? "FUNDING PROVENANCE" : "TRANSFER NETWORK"}</div>
     <AnimatePresence>
