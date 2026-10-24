@@ -196,6 +196,39 @@ class HeliusClient:
 
         return transactions
 
+    async def get_token_mint_date(
+        self,
+        token_mint: str,
+    ) -> str | None:
+        """
+        Return the earliest parsed-event timestamp Helius reports for a token mint.
+
+        The parsed-events history endpoint is queried with ascending sort and
+        limit=1, so this is the earliest indexed event observed for the mint.
+        """
+        if not token_mint or not token_mint.strip():
+            raise ValueError("token_mint must not be empty")
+
+        transactions = await self.get_transactions_for_address(
+            address=token_mint.strip(),
+            limit=1,
+            sort_order="asc",
+        )
+        if not transactions:
+            return None
+
+        parsed = transactions[0].get("parsed") or {}
+        block_time = parsed.get("blockTime")
+        if block_time is None:
+            return None
+
+        from datetime import datetime, timezone
+
+        return datetime.fromtimestamp(
+            int(block_time),
+            tz=timezone.utc,
+        ).isoformat()
+
     async def get_transfers_for_address(
         self,
         address: str,
