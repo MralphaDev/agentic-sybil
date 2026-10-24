@@ -18,8 +18,9 @@ from app.database.connection import get_connection
 load_dotenv(ENV_FILE, override=False)
 
 router = APIRouter(prefix="/investigations", tags=["Investigation Copilot"])
-MAX_SQL_CALLS = 2
+MAX_SQL_CALLS = 1
 MAX_HELIUS_CALLS = 1
+MAX_OUTPUT_TOKENS = 300
 MAX_ROWS = 50
 MAX_QUESTION_CHARS = 1200
 SQL_TIMEOUT_MS = 5000
@@ -68,7 +69,7 @@ def _emit(event_type: str, data: Any) -> str:
     return encode_sse({"type": event_type, "data": data})
 
 
-def _get_llm(max_tokens: int = 900) -> ChatOpenAI:
+def _get_llm(max_tokens: int = MAX_OUTPUT_TOKENS) -> ChatOpenAI:
     return ChatOpenAI(
         model="deepseek-chat",
         api_key=settings.DEEPSEEK_API_KEY,
@@ -163,7 +164,7 @@ def _get_investigation_context(run_id: str) -> tuple[str, dict[str, Any]]:
 
 
 async def _generate_sql(question: str, context_text: str) -> tuple[str, str]:
-    response = await _get_llm(350).ainvoke([
+    response = await _get_llm(220).ainvoke([
         SystemMessage(content=SQL_SYSTEM),
         HumanMessage(content=f"Investigation context:\n{context_text[:5000]}\n\nQuestion: {question}"),
     ])
@@ -221,7 +222,7 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                          "inputSchema": tool.inputSchema}
                         for tool in tools
                     ]
-                    selection = await _get_llm(300).ainvoke([
+                    selection = await _get_llm(200).ainvoke([
                         SystemMessage(content=(
                             "Choose at most one read-only Helius MCP tool for the user question. "
                             "Return only JSON {\"name\":\"tool name\",\"arguments\":{...}}. "
@@ -254,7 +255,61 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
         return None
 
 
+async def _classify_intent(question: str) -> str:
+    """Classify before any database or Helius work; output is deliberately tiny."""
+    response = await _get_llm(100).ainvoke([
+        SystemMessage(content=(
+            "Classify the user's intent. Return exactly one word: 'investigation' if they ask "
+            "about this token, wallets, on-chain activity, the current investigation/report, "
+            "blockchain data, or a question requiring database/RPC evidence. Return 'general' "
+            "for greetings, thanks, jokes, small talk, general programming/product questions, "
+            "or anything answerable without looking up this investigation's data. Do not perform the task."
+        )),
+        HumanMessage(content=question[:MAX_QUESTION_CHARS]),
+    ])
+    raw = response.content
+    if isinstance(raw, list):
+        raw = "".join(part.get("text", "") for part in raw if isinstance(part, dict))
+    return "investigation" if "investigation" in str(raw).strip().lower() else "general"
+
+
+async def _answer_general_question(question: str) -> AsyncIterator[str]:
+    """Answer non-investigation intent without database or Helius calls."""
+    yield _emit("progress", {"label": "Answering directly — no database or RPC lookup needed", "state": "active"})
+    async for chunk in _get_llm(MAX_OUTPUT_TOKENS).astream([
+        SystemMessage(content=(
+            "You are a concise, friendly assistant inside Investigation Copilot. "
+            "This is general conversation, not an on-chain investigation request. "
+            "Answer directly in at most 300 output tokens. Do not query databases or RPCs, "
+            "and do not claim to have looked up investigation data."
+        )),
+        HumanMessage(content=question),
+    ]):
+        content = chunk.content
+        if isinstance(content, str) and content:
+            yield _emit("token", {"content": content})
+        elif isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
+                    yield _emit("token", {"content": part["text"]})
+
 async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
+    # Confirm intent first. Casual/general requests must not touch DB or Helius.
+    try:
+        intent = await _classify_intent(request.message)
+    except Exception:
+        casual = re.compile(
+            r"^(hi|hello|hey|thanks|thank you|thx|你好|嗨|哈喽|谢谢|谢了|在吗|早上好|晚安|哈哈)[!！?？。\s]*$",
+            re.IGNORECASE,
+        )
+        intent = "general" if casual.match(request.message.strip()) else "investigation"
+
+    if intent == "general":
+        async for event in _answer_general_question(request.message):
+            yield event
+        yield _emit("done", {})
+        return
+
     try:
         context_text, _ = _get_investigation_context(request.run_id)
     except HTTPException as exc:
@@ -303,7 +358,7 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
                 "Do not claim RPC was queried successfully unless a tool result is present."
             )),
         ]
-        async for chunk in _get_llm(900).astream(messages):
+        async for chunk in _get_llm(MAX_OUTPUT_TOKENS).astream(messages):
             content = chunk.content
             if isinstance(content, str) and content:
                 yield _emit("token", {"content": content})
