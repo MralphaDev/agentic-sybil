@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -6,6 +5,7 @@ import {
   connectInvestigationStream,
   type InvestigationEvent,
 } from "@/lib/api/investigation-stream";
+import type { PipelineStage } from "@/components/investigation-progress";
 
 type ResultResponse = {
   run_id: string;
@@ -34,17 +34,57 @@ function eventText(event: InvestigationEvent): string {
   return JSON.stringify(data);
 }
 
+function parsePipelineStage(value: unknown): PipelineStage | null {
+  if (!value || typeof value !== "object") return null;
+
+  const stage = value as Record<string, unknown>;
+  if (
+    typeof stage.step !== "string" ||
+    typeof stage.title !== "string" ||
+    typeof stage.detail !== "string" ||
+    !["running", "finished", "failed"].includes(String(stage.state))
+  ) {
+    return null;
+  }
+
+  return {
+    step: stage.step,
+    title: stage.title,
+    detail: stage.detail,
+    state: stage.state as PipelineStage["state"],
+    ...(typeof stage.elapsed_seconds === "number"
+      ? { elapsed_seconds: stage.elapsed_seconds }
+      : {}),
+  };
+}
+
 export function useInvestigationDashboard() {
   const [runId, setRunId] = useState("");
   const [status, setStatus] = useState("Connecting...");
   const [events, setEvents] = useState<InvestigationEvent[]>([]);
+  const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>([]);
   const [result, setResult] = useState<unknown>(null);
-  const [resultStatus, setResultStatus] = useState(
-    "Waiting for results",
-  );
+  const [resultStatus, setResultStatus] = useState("Waiting for results");
   const [streamError, setStreamError] = useState("");
 
   const handleEvent = useCallback((event: InvestigationEvent) => {
+    // Pipeline progress belongs in Investigation Results, not Agent Activity.
+    if (event.type === "stage") {
+      const stage = parsePipelineStage(event.data);
+      if (!stage) return;
+
+      setPipelineStages((previous) => {
+        const index = previous.findIndex((item) => item.step === stage.step);
+
+        if (index === -1) return [...previous, stage];
+
+        return previous.map((item, itemIndex) =>
+          itemIndex === index ? { ...item, ...stage } : item,
+        );
+      });
+      return;
+    }
+
     setEvents((previous) => {
       if (event.type === "llm_token") {
         const last = previous[previous.length - 1];
@@ -52,10 +92,7 @@ export function useInvestigationDashboard() {
         if (last?.type === "llm_token") {
           return [
             ...previous.slice(0, -1),
-            {
-              ...event,
-              data: eventText(last) + eventText(event),
-            },
+            { ...event, data: eventText(last) + eventText(event) },
           ];
         }
       }
@@ -117,13 +154,10 @@ export function useInvestigationDashboard() {
 
     async function fetchResult() {
       try {
-        const response = await fetch(resultUrl, {
-          cache: "no-store",
-        });
+        const response = await fetch(resultUrl, { cache: "no-store" });
 
         if (!response.ok) {
           const detail = await response.json().catch(() => null);
-
           throw new Error(
             detail?.detail ??
               `Result request failed (HTTP ${response.status})`,
@@ -131,20 +165,16 @@ export function useInvestigationDashboard() {
         }
 
         const payload: ResultResponse = await response.json();
-
         if (cancelled) return;
 
         const normalizedStatus = payload.status.toLowerCase();
-
         setResultStatus(payload.status);
 
         if (payload.result !== undefined && payload.result !== null) {
           setResult(payload.result);
         }
 
-        if (payload.error) {
-          setStreamError(payload.error);
-        }
+        if (payload.error) setStreamError(payload.error);
 
         if (
           normalizedStatus === "completed" ||
@@ -157,9 +187,7 @@ export function useInvestigationDashboard() {
             setStatus("Completed");
           } else {
             setStatus("Investigation failed");
-            if (payload.error) {
-              setStreamError(payload.error);
-            }
+            if (payload.error) setStreamError(payload.error);
           }
         }
       } catch (error) {
@@ -169,9 +197,7 @@ export function useInvestigationDashboard() {
               ? error.message
               : "Could not fetch investigation result";
 
-          setResultStatus(
-            `Waiting for backend result (${message})`,
-          );
+          setResultStatus(`Waiting for backend result (${message})`);
         }
       } finally {
         if (!cancelled && !terminal) {
@@ -184,9 +210,7 @@ export function useInvestigationDashboard() {
 
     return () => {
       cancelled = true;
-
       if (timer) clearTimeout(timer);
-
       disconnect();
     };
   }, [handleEvent]);
@@ -204,6 +228,7 @@ export function useInvestigationDashboard() {
     runId,
     status,
     events,
+    pipelineStages,
     result,
     resultStatus,
     streamError,
