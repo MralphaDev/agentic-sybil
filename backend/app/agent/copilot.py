@@ -161,10 +161,12 @@ def _lookup_wallet_direct(wallet_address: str) -> dict[str, Any]:
                        to_token, to_amount, protocol, direction, amount, mint
                 FROM public.wallet_event_log
                 WHERE wallet_address = %s
+                   OR from_user_address = %s
+                   OR to_user_address = %s
                 ORDER BY event_time DESC NULLS LAST
                 LIMIT %s
                 """,
-                (wallet_address, MAX_ROWS),
+                (wallet_address, wallet_address, wallet_address, MAX_ROWS),
             )
             event_columns = [column.name for column in event_cursor.description or []]
             events = [
@@ -270,57 +272,106 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                     if not wallet_address:
                         return ("HELIUS_MCP_ERROR", "No valid Solana wallet address was found for the Helius lookup.")
 
-                    # Select a read-only transaction tool from its live MCP schema rather than
-                    # asking another LLM call to guess a tool name and argument shape.
-                    candidates = []
-                    for tool in tools:
-                        name_text = f"{tool.name} {tool.description or ''}".lower()
+                    # Helius MCP uses router tools (heliusTransaction, heliusWallet, etc.).
+                    # Their schemas require an "action" selector, so generic required-argument
+                    # inference can incorrectly reject every valid tool. Prefer the documented
+                    # parsed transaction-history action, then fall back to another compatible
+                    # read-only action discovered from the live schema.
+                    def schema_args(tool, action_name: str, preferred: dict[str, Any]) -> dict[str, Any] | None:
                         schema = tool.inputSchema or {}
                         properties = schema.get("properties") or {}
                         required = schema.get("required") or []
-                        address_key = next((
-                            key for key in properties
-                            if re.search(r"(^|_)(address|wallet|account|owner|pubkey|publickey)(_|$)", key, re.I)
-                            or key.lower() in {"address", "walletaddress", "accountaddress", "publickey", "pubkey"}
-                        ), None)
-                        if not address_key:
-                            continue
-                        if not re.search(r"transaction|signature|history|activity|transfer", name_text):
-                            continue
-                        arguments = {}
-                        usable = True
+                        args: dict[str, Any] = {}
+                        if "action" in properties:
+                            args["action"] = action_name
+                        for key, value in preferred.items():
+                            if key in properties:
+                                args[key] = value
+                        # Supply conservative defaults for any other required parameters.
                         for key in required:
-                            if key == address_key:
-                                arguments[key] = wallet_address
-                            elif key in properties and properties[key].get("default") is not None:
-                                arguments[key] = properties[key]["default"]
-                            elif key in properties and properties[key].get("enum"):
-                                arguments[key] = properties[key]["enum"][0]
+                            if key in args:
+                                continue
+                            prop = properties.get(key, {})
+                            if prop.get("default") is not None:
+                                args[key] = prop["default"]
+                            elif prop.get("enum"):
+                                args[key] = prop["enum"][0]
                             elif re.search(r"limit|max_results|page_size", key, re.I):
-                                arguments[key] = min(50, int(properties[key].get("maximum", 50)))
+                                args[key] = min(50, int(prop.get("maximum", 50)))
                             else:
-                                usable = False
-                                break
-                        if not usable:
-                            continue
-                        if address_key not in arguments:
-                            arguments[address_key] = wallet_address
-                        limit_key = next((key for key in properties if re.search(r"^(limit|max_results|page_size)$", key, re.I)), None)
-                        if limit_key:
-                            maximum = properties[limit_key].get("maximum", 50)
-                            arguments[limit_key] = min(50, int(maximum))
-                        score = 0
-                        score += 5 if "transaction" in tool.name.lower() else 0
-                        score += 4 if "history" in tool.name.lower() else 0
-                        score += 3 if "signature" in tool.name.lower() else 0
-                        score += 2 if "address" in tool.name.lower() else 0
-                        candidates.append((score, tool.name, arguments))
+                                return None
+                        return args
 
-                    if not candidates:
+                    tool_by_name = {tool.name.lower(): tool for tool in tools}
+                    selected = None
+                    # Official helius-mcp exposes getTransactionHistory through heliusTransaction.
+                    transaction_router = tool_by_name.get("heliustransaction")
+                    if transaction_router:
+                        schema = transaction_router.inputSchema or {}
+                        properties = schema.get("properties") or {}
+                        for action_name, preferred in (
+                            ("getTransactionHistory", {
+                                "address": wallet_address,
+                                "mode": "parsed",
+                                "limit": 10,
+                                "detail": "standard",
+                            }),
+                            ("getTransactionHistory", {
+                                "address": wallet_address,
+                                "mode": "signatures",
+                                "limit": 10,
+                                "detail": "standard",
+                            }),
+                        ):
+                            if "action" in properties and any(
+                                key in properties for key in ("address", "walletAddress", "accountAddress")
+                            ):
+                                args = schema_args(transaction_router, action_name, preferred)
+                                if args is not None:
+                                    selected = (transaction_router.name, args)
+                                    break
+
+                    # Some server versions expose direct tools instead of router actions.
+                    if selected is None:
+                        candidates = []
+                        for tool in tools:
+                            name_text = f"{tool.name} {tool.description or ''}".lower()
+                            schema = tool.inputSchema or {}
+                            properties = schema.get("properties") or {}
+                            address_key = next((
+                                key for key in properties
+                                if re.search(r"(^|_)(address|wallet|account|owner|pubkey|publickey)(_|$)", key, re.I)
+                                or key.lower() in {
+                                    "address", "walletaddress", "accountaddress",
+                                    "publickey", "pubkey", "owneraddress",
+                                }
+                            ), None)
+                            if not address_key:
+                                continue
+                            if not re.search(r"transaction|signature|history|activity|transfer", name_text):
+                                continue
+                            preferred = {address_key: wallet_address}
+                            for key in properties:
+                                if re.search(r"^(limit|max_results|page_size)$", key, re.I):
+                                    preferred[key] = min(50, int(properties[key].get("maximum", 50)))
+                            args = schema_args(tool, "", preferred)
+                            if args is not None:
+                                score = 5 if "transaction" in name_text else 0
+                                score += 4 if "history" in name_text else 0
+                                score += 3 if "signature" in name_text else 0
+                                candidates.append((score, tool.name, args))
+                        if candidates:
+                            candidates.sort(key=lambda item: item[0], reverse=True)
+                            _, tool_name, arguments = candidates[0]
+                            selected = (tool_name, arguments)
+
+                    if selected is None:
                         available = ", ".join(tool.name for tool in tools[:30])
-                        return ("HELIUS_MCP_ERROR", f"No compatible read-only transaction-history tool found. Available tools: {available}")
-                    candidates.sort(key=lambda item: item[0], reverse=True)
-                    _, name, arguments = candidates[0]
+                        return (
+                            "HELIUS_MCP_ERROR",
+                            f"No compatible read-only transaction-history tool found. Available tools: {available}",
+                        )
+                    name, arguments = selected
                     result = await session.call_tool(name, arguments)
                     if getattr(result, "isError", False):
                         return ("HELIUS_MCP_ERROR", json.dumps(result.content, ensure_ascii=False, default=str)[:1500])
