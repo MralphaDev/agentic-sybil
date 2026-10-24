@@ -31,6 +31,13 @@ const nodeKind = (node: AnyRecord) => {
   if (/verified|benign|normal/.test(text)) return "verified";
   return "wallet";
 };
+const clusterColors = ["#ef7112", "#da00ab", "#00d58c", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4"];
+const clusterColor = (value: unknown) => {
+  const key = String(value ?? "unclustered");
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  return clusterColors[Math.abs(hash) % clusterColors.length];
+};
 const nodePalette: Record<string, { edge: string; inner: string; glow: string; label: string }> = {
   cex: { edge: "#facc15", inner: "#854d0e", glow: "rgba(250,204,21,.28)", label: "CEX" },
   contract: { edge: "#34d399", inner: "#065f46", glow: "rgba(52,211,153,.25)", label: "CONTRACT" },
@@ -125,18 +132,19 @@ export default function BubblemapPage() {
       if (!source || !target || source.x == null || source.y == null || target.x == null || target.y == null) continue;
       const relevant = !currentSelected || source.id === currentSelected || target.id === currentSelected;
       ctx.beginPath(); ctx.moveTo(source.x, source.y); ctx.lineTo(target.x, target.y);
-      ctx.strokeStyle = relevant ? (currentMode === "funding" ? "rgba(251,146,60,.34)" : "rgba(248,113,113,.25)") : "rgba(148,163,184,.035)";
-      ctx.lineWidth = (relevant ? .75 : .45) / view.k; ctx.stroke();
+      ctx.strokeStyle = relevant ? "rgba(192,205,230,.42)" : "rgba(148,163,184,.075)";
+      ctx.lineWidth = (relevant ? 1.05 : .6) / view.k; ctx.stroke();
     }
     for (const node of nodes) {
       if (node.x == null || node.y == null) continue;
       const isMatch = !currentSearch || visible.has(node.id);
       const active = currentSelected === node.id;
       const degree = number(node.in_degree) + number(node.out_degree);
-      const radius = Math.max(7, Math.min(21, 7 + Math.log2(degree + 1) * 2.4));
+      const radius = Math.max(13, Math.min(25, 18 + Math.log2(degree + 1) * 1.15));
       const kind = nodeKind(node);
       const palette = nodePalette[kind];
-      const edgeColor = currentMode === "funding" && kind === "wallet" ? "#facc15" : palette.edge;
+      const groupColor = clusterColor(node.cluster_id ?? node.cluster ?? node.cluster_label ?? node.component_id ?? (currentMode === "funding" ? node.first_funder : null));
+      const edgeColor = kind === "cex" || kind === "contract" || kind === "suspicious" || kind === "verified" ? palette.edge : groupColor;
       if (active || (currentSearch && isMatch)) {
         ctx.beginPath(); ctx.arc(node.x, node.y, radius + (active ? 12 : 8), 0, Math.PI * 2);
         ctx.fillStyle = palette.glow; ctx.fill();
@@ -144,12 +152,12 @@ export default function BubblemapPage() {
       }
       // Glassy bubble: saturated gradient rim, translucent dark core.
       const bubble = ctx.createRadialGradient(node.x - radius * .36, node.y - radius * .4, radius * .08, node.x, node.y, radius * 1.2);
-      bubble.addColorStop(0, isMatch ? palette.edge + "d9" : "rgba(40,45,56,.3)");
-      bubble.addColorStop(.42, isMatch ? palette.inner + "c9" : "rgba(12,14,20,.5)");
+      bubble.addColorStop(0, isMatch ? edgeColor + "d9" : "rgba(40,45,56,.3)");
+      bubble.addColorStop(.42, isMatch ? (kind === "wallet" ? edgeColor : palette.inner) + "66" : "rgba(12,14,20,.5)");
       bubble.addColorStop(1, "rgba(4,5,9,.94)");
       ctx.beginPath(); ctx.arc(node.x, node.y, radius + (active ? 2 : 0), 0, Math.PI * 2);
       ctx.fillStyle = bubble; ctx.globalAlpha = isMatch ? .96 : .18; ctx.fill(); ctx.globalAlpha = 1;
-      ctx.strokeStyle = active ? "#ffffff" : edgeColor; ctx.lineWidth = (active ? 2 : 1.2) / view.k; ctx.stroke();
+      ctx.strokeStyle = active ? "#ffffff" : edgeColor; ctx.lineWidth = (active ? 2.4 : 5.5) / view.k; ctx.stroke();
       ctx.beginPath(); ctx.arc(node.x - radius * .3, node.y - radius * .34, Math.max(1.4, radius * .17), 0, Math.PI * 2);
       ctx.fillStyle = "rgba(255,255,255,.58)"; ctx.fill();
       if (kind === "cex" || kind === "contract") {
@@ -160,11 +168,7 @@ export default function BubblemapPage() {
         ctx.strokeStyle = edgeColor; ctx.lineWidth = .7 / view.k; ctx.strokeRect(node.x - tagWidth / 2, node.y + radius * .42, tagWidth, 13 / view.k);
         ctx.fillStyle = edgeColor; ctx.fillText(tag, node.x - tagWidth / 2 + 5, node.y + radius * .42 + 9 / view.k);
       }
-      if (active || (currentSearch && isMatch) || (view.k > .85 && nodes.length < 1000)) {
-        ctx.font = `600 ${active ? 12 : 10}px ui-monospace, SFMono-Regular, monospace`;
-        ctx.lineWidth = 3 / view.k; ctx.strokeStyle = "rgba(4,5,9,.9)"; ctx.strokeText(shortAddress(node.id), node.x + radius + 7, node.y + 3);
-        ctx.fillStyle = active ? "#fff" : "#cbd5e1"; ctx.fillText(shortAddress(node.id), node.x + radius + 7, node.y + 3);
-      }
+      // Wallet addresses intentionally stay hidden to keep dense graphs readable.
     }
     ctx.restore();
   }, []);
