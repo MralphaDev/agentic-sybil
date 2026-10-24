@@ -220,7 +220,7 @@ export default function InvestigationProgress({
               {completedCount} / {stages.length} steps completed
             </p>
           </div>
-          <div className="space-y-2">{content}</div>
+          <div className="max-h-[360px] space-y-2 overflow-y-auto overscroll-contain pr-2">{content}</div>
         </div>
       )}
     </div>
