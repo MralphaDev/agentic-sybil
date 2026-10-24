@@ -7,21 +7,26 @@ from typing import Any, AsyncIterator
 from fastapi import HTTPException
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.agent.copilot.common import logger, MAX_HELIUS_CALLS, MAX_OUTPUT_TOKENS, MAX_QUESTION_CHARS, MAX_ROWS, _emit, _get_llm
-from app.agent.copilot.database import _generate_sql, _get_investigation_context, _lookup_top_token_sellers, _lookup_wallet_direct, _lookup_wallet_funding_evidence, _run_readonly_query, _validate_sql
+from app.agent.copilot.database import _generate_sql, _get_investigation_context, _lookup_wallet_funding_evidence, _run_readonly_query, _validate_sql
 from app.agent.copilot.helius import _helius_mcp_fallback
 from app.agent.copilot.models import CopilotRequest
 from app.agent.copilot.prompts import COPILOT_SYSTEM
 
 async def _classify_intent(question: str) -> str:
-    """Classify before any database or Helius work; output is deliberately tiny."""
+    """Route by the user's goal: database-answerable requests should reach SQL planning."""
     response = await _get_llm(100).ainvoke([
         SystemMessage(content=(
-            "Classify the user's intent. Return exactly one word: 'lookup' if they need "
-            "specific wallet/transaction/on-chain records or fresh database/RPC evidence; "
-            "'report' if they ask about the existing investigation verdict, findings, or "
-            "interpretation that can be answered from the saved report; 'general' for "
-            "greetings, thanks, jokes, small talk, general programming/product questions, "
-            "or anything unrelated to this investigation. Do not perform the task."
+            "Classify the user's intent. Return exactly one word: 'lookup' if answering "
+            "requires retrieving, counting, listing, ranking, comparing, filtering, or "
+            "joining records from the investigation database or on-chain sources. This "
+            "includes natural-language questions whose answers may require complex SQL; "
+            "prefer lookup whenever the user asks a factual question about wallets, events, "
+            "transactions, tokens, holdings, funding, counterparties, activity, or patterns. "
+            "'report' only if they explicitly ask to explain or summarize findings already "
+            "present in the saved investigation report without needing new data. 'general' "
+            "for greetings, thanks, jokes, small talk, and unrelated programming/product "
+            "questions. Do not classify a database question as 'general' just because it "
+            "does not contain a wallet address or a familiar keyword. Do not perform the task."
         )),
         HumanMessage(content=question[:MAX_QUESTION_CHARS]),
     ])
@@ -29,12 +34,11 @@ async def _classify_intent(question: str) -> str:
     if isinstance(raw, list):
         raw = "".join(part.get("text", "") for part in raw if isinstance(part, dict))
     label = str(raw).strip().lower()
-    if "lookup" in label:
-        return "lookup"
-    if "report" in label:
+    if re.search(r"\breport\b", label):
         return "report"
+    if re.search(r"\blookup\b", label):
+        return "lookup"
     return "general"
-
 
 async def _answer_general_question(question: str) -> AsyncIterator[str]:
     """Answer non-investigation intent without database or Helius calls."""
@@ -144,53 +148,56 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
         r"(?<![1-9A-HJ-NP-Za-km-z])([1-9A-HJ-NP-Za-km-z]{32,44})(?![1-9A-HJ-NP-Za-km-z])",
         request.message,
     )
-    extracted_address = wallet_match.group(1) if wallet_match else None
-    # A mint address in a "who sold this token?" question is not a wallet address.
-    # Route this common database question to a deterministic aggregate query.
-    token_seller_query = bool(
-        re.search(r"\b(sell|sold|seller|selling|sell off|dumped)\b", request.message, re.IGNORECASE)
-        and re.search(r"\b(wallets?|token|mint|coin|holders?)\b", request.message, re.IGNORECASE)
-    )
-    wallet_address = None if token_seller_query else extracted_address
+    wallet_address = wallet_match.group(1) if wallet_match else None
     database_has_transaction_rows = False
-    if token_seller_query:
-        yield _emit("progress", {"label": "Finding wallets that sold this token in PostgreSQL", "state": "active"})
-        try:
-            rows = await asyncio.to_thread(_lookup_top_token_sellers, extracted_address, 5 if extracted_address else 50)
+
+    # Database-first for all factual investigation questions. Let the planner use the
+    # user's full intent and schema instead of dispatching on a growing list of phrases.
+    yield _emit("progress", {"label": "Planning a read-only PostgreSQL query", "state": "active"})
+    try:
+        sql, reason = await _generate_sql(request.message, context_text)
+        if sql:
+            safe_sql = _validate_sql(sql)
+            yield _emit("progress", {"label": reason[:100], "state": "active"})
+            rows = await asyncio.to_thread(_run_readonly_query, safe_sql)
             database_has_transaction_rows = bool(rows)
-            # If the deterministic lookup finds no rows, let the general SQL planner
-            # try alternate interpretations of how this ingestor records token mints.
+            # An empty result is a prompt to reconsider assumptions, not proof that the
+            # database lacks evidence. Retry once with the first query/result as feedback.
             if not rows:
-                sql, reason = await _generate_sql(request.message, context_text)
-                if sql:
-                    safe_sql = _validate_sql(sql)
-                    yield _emit("progress", {"label": reason[:100], "state": "active"})
-                    rows = await asyncio.to_thread(_run_readonly_query, safe_sql)
-                    database_has_transaction_rows = bool(rows)
-        except Exception as exc:
-            sql_error = f"Token seller lookup failed: {type(exc).__name__}: {str(exc)[:180]}"
-    elif wallet_address:
-        # Do not ask an LLM to construct the most important wallet lookup query.
-        # Exact parameterized queries avoid schema hallucinations and address mismatches.
-        yield _emit("progress", {"label": "Looking up the exact wallet address in PostgreSQL", "state": "active"})
+                retry_sql, retry_reason = await _generate_sql(
+                    request.message,
+                    context_text + "\\nPrevious query returned zero rows. Reconsider whether "
+                    "the question was over-filtered, whether token identity is stored in mint, "
+                    "from_token, or to_token, and whether a broader valid query answers the "
+                    "same user goal. Do not invent filters or facts. Previous SQL: " + safe_sql,
+                )
+                if retry_sql and retry_sql.strip() != sql.strip():
+                    safe_retry_sql = _validate_sql(retry_sql)
+                    yield _emit("progress", {"label": ("Retry: " + retry_reason)[:100], "state": "active"})
+                    retry_rows = await asyncio.to_thread(_run_readonly_query, safe_retry_sql)
+                    if retry_rows:
+                        sql, rows = retry_sql, retry_rows
+                        database_has_transaction_rows = True
+        else:
+            sql_error = "SQL planner did not produce a query"
+    except Exception as exc:
+        sql_error = f"{type(exc).__name__}: {str(exc)[:200]}"
+        # If planning, validation, or execution fails, re-plan once with the failure
+        # details so the model can correct its assumptions instead of giving up.
         try:
-            direct_data = await asyncio.to_thread(_lookup_wallet_direct, wallet_address)
-            database_has_transaction_rows = bool(direct_data["recent_events"])
-            if direct_data["wallet_profile"] is not None or direct_data["recent_events"]:
-                rows = [{"wallet_profile": direct_data["wallet_profile"], "recent_events": direct_data["recent_events"]}]
-        except Exception as exc:
-            sql_error = f"Direct wallet lookup failed: {type(exc).__name__}: {str(exc)[:180]}"
-    else:
-        yield _emit("progress", {"label": "Planning a read-only PostgreSQL query", "state": "active"})
-        try:
-            sql, reason = await _generate_sql(request.message, context_text)
-            if sql:
-                safe_sql = _validate_sql(sql)
-                yield _emit("progress", {"label": reason[:100], "state": "active"})
-                rows = await asyncio.to_thread(_run_readonly_query, safe_sql)
-                database_has_transaction_rows = bool(rows)
-        except Exception as exc:
-            sql_error = str(exc)[:240]
+            retry_sql, retry_reason = await _generate_sql(
+                request.message,
+                context_text + "\\nPrevious database attempt failed: " + sql_error
+                + ". Correct the query while obeying the approved schema and read-only policy."
+            )
+            if retry_sql:
+                safe_retry_sql = _validate_sql(retry_sql)
+                yield _emit("progress", {"label": ("Retry: " + retry_reason)[:100], "state": "active"})
+                rows = await asyncio.to_thread(_run_readonly_query, safe_retry_sql)
+                sql, database_has_transaction_rows = retry_sql, bool(rows)
+                sql_error = None
+        except Exception as retry_exc:
+            logger.warning("[Copilot] SQL retry failed: %s", str(retry_exc)[:180])
 
     helius_result = None
     helius_results: list[dict[str, Any]] = []
@@ -284,8 +291,8 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
         database_has_transaction_rows = bool(rows) or database_has_transaction_rows
         # Empty database results are not, by themselves, a reason to call Helius.
         # Helius is useful when explicitly requested or when resolving a specific wallet.
-        if explicit_helius_request or wallet_address:
-            label = "Calling Helius MCP for live on-chain evidence" if explicit_helius_request else "Cross-checking wallet evidence with Helius"
+        if explicit_helius_request:
+            label = "Calling Helius MCP for live on-chain evidence"
             yield _emit("progress", {"label": label, "state": "active"})
             helius_task = asyncio.create_task(_helius_mcp_fallback(request.message, context_text))
             try:
