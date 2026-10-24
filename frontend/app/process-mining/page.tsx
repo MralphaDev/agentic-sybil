@@ -4,7 +4,6 @@ import "@xyflow/react/dist/style.css";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ReactFlow, Background, Controls, MiniMap, Handle, Position, MarkerType, type Node, type Edge as FlowEdge, type NodeProps, type EdgeProps, BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useNodesState, useEdgesState } from "@xyflow/react";
-import dagre from "dagre";
 import { ArrowLeft, GitBranch, Activity, Users, Repeat2, TrendingUp, Filter, Network, X } from "lucide-react";
 
 type AnyRecord = Record<string, unknown>;
@@ -52,38 +51,53 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
     Object.keys(starts).forEach((name) => names.add(name));
     Object.keys(ends).forEach((name) => names.add(name));
     if (!names.size) return { nodes: [] as Node[], edges: [] as FlowEdge[], activityCount: 0 };
-    const graph = new dagre.graphlib.Graph({ multigraph: true });
-    graph.setDefaultEdgeLabel(() => ({}));
-    graph.setGraph({ rankdir: "LR", nodesep: 82, ranksep: 170, edgesep: 58, marginx: 70, marginy: 60, ranker: "network-simplex", acyclicer: "greedy" });
     const activityStats = new Map<string, { incoming: number; outgoing: number }>();
-    names.forEach((name) => { activityStats.set(name, { incoming: 0, outgoing: 0 }); graph.setNode(name, { width: 194, height: 82 }); });
-    graph.setNode("__START__", { width: 76, height: 76 });
-    graph.setNode("__END__", { width: 76, height: 76 });
-    edges.forEach((edge, index) => {
+    names.forEach((name) => activityStats.set(name, { incoming: 0, outgoing: 0 }));
+    edges.forEach((edge) => {
       activityStats.get(edge.source)!.outgoing += edge.count;
       activityStats.get(edge.target)!.incoming += edge.count;
-      graph.setEdge(edge.source, edge.target, { weight: Math.max(1, Math.sqrt(edge.count)), minlen: 1 }, `edge-${index}`);
     });
-    Object.entries(starts).forEach(([name, count], index) => {
-      if (!names.has(name)) return;
-      graph.setEdge("__START__", name, { weight: Math.max(1, Math.sqrt(number(count) ?? 1)), minlen: 1 }, `start-${index}`);
-    });
-    Object.entries(ends).forEach(([name, count], index) => {
-      if (!names.has(name)) return;
-      graph.setEdge(name, "__END__", { weight: Math.max(1, Math.sqrt(number(count) ?? 1)), minlen: 1 }, `end-${index}`);
-    });
-    // If the backend omitted boundary counts, still provide explicit process endpoints.
-    if (!Object.keys(starts).length) [...names].filter((name) => !edges.some((edge) => edge.target === name)).forEach((name, i) => graph.setEdge("__START__", name, { weight: 1 }, `auto-start-${i}`));
-    if (!Object.keys(ends).length) [...names].filter((name) => !edges.some((edge) => edge.source === name)).forEach((name, i) => graph.setEdge(name, "__END__", { weight: 1 }, `auto-end-${i}`));
-    dagre.layout(graph);
-    const startPoint = graph.node("__START__"), endPoint = graph.node("__END__");
+    const startNames = Object.keys(starts).filter((name) => names.has(name));
+    const endNames = Object.keys(ends).filter((name) => names.has(name));
+    const roots = startNames.length ? startNames : [...names].filter((name) => !edges.some((edge) => edge.target === name));
+    const sinks = endNames.length ? endNames : [...names].filter((name) => !edges.some((edge) => edge.source === name));
+    const rank = new Map<string, number>();
+    names.forEach((name) => rank.set(name, roots.includes(name) ? 1 : 2));
+    for (let pass = 0; pass < Math.max(1, names.size - 1); pass++) {
+      let changed = false;
+      for (const edge of edges) {
+        const next = Math.min(names.size, (rank.get(edge.source) ?? 1) + 1);
+        if (!roots.includes(edge.target) && next > (rank.get(edge.target) ?? 1)) {
+          rank.set(edge.target, next); changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    const maxRank = Math.max(2, ...rank.values());
+    const columns = new Map<number, string[]>();
+    for (const name of names) {
+      const col = Math.max(1, Math.min(maxRank, rank.get(name) ?? 1));
+      if (!columns.has(col)) columns.set(col, []);
+      columns.get(col)!.push(name);
+    }
+    for (const col of columns.values()) col.sort((a, b) =>
+      (activityStats.get(b)!.incoming + activityStats.get(b)!.outgoing) -
+      (activityStats.get(a)!.incoming + activityStats.get(a)!.outgoing) || a.localeCompare(b)
+    );
+    const positions = new Map<string, { x: number; y: number }>();
+    const xGap = 300, yGap = 150;
+    for (const [col, values] of columns) values.forEach((name, index) => positions.set(name, {
+      x: col * xGap, y: (index - (values.length - 1) / 2) * yGap,
+    }));
+    const startY = roots.length ? roots.reduce((sum, name) => sum + (positions.get(name)?.y ?? 0), 0) / roots.length : 0;
+    const endY = sinks.length ? sinks.reduce((sum, name) => sum + (positions.get(name)?.y ?? 0), 0) / sinks.length : 0;
     const nodes: Node[] = [
-      { id: "__START__", type: "activity", position: { x: startPoint.x - 38, y: startPoint.y - 38 }, data: { title: "START", incoming: 0, outgoing: Object.values(starts).reduce((sum, n) => sum + (number(n) ?? 0), 0), start: 0, end: 0, special: "start" } },
+      { id: "__START__", type: "activity", position: { x: 0, y: startY - 33 }, data: { title: "START", incoming: 0, outgoing: Object.values(starts).reduce((sum, n) => sum + (number(n) ?? 0), 0), start: 0, end: 0, special: "start" } },
       ...[...names].map((name) => {
-        const point = graph.node(name), stats = activityStats.get(name)!;
-        return { id: name, type: "activity", position: { x: point.x - 97, y: point.y - 41 }, data: { title: name, incoming: stats.incoming, outgoing: stats.outgoing, start: number(starts[name]) ?? 0, end: number(ends[name]) ?? 0 } };
+        const point = positions.get(name) ?? { x: xGap, y: 0 }, stats = activityStats.get(name)!;
+        return { id: name, type: "activity", position: { x: point.x, y: point.y - 41 }, data: { title: name, incoming: stats.incoming, outgoing: stats.outgoing, start: number(starts[name]) ?? 0, end: number(ends[name]) ?? 0 } };
       }),
-      { id: "__END__", type: "activity", position: { x: endPoint.x - 38, y: endPoint.y - 38 }, data: { title: "END", incoming: Object.values(ends).reduce((sum, n) => sum + (number(n) ?? 0), 0), outgoing: 0, start: 0, end: 0, special: "end" } },
+      { id: "__END__", type: "activity", position: { x: (maxRank + 1) * xGap, y: endY - 33 }, data: { title: "END", incoming: Object.values(ends).reduce((sum, n) => sum + (number(n) ?? 0), 0), outgoing: 0, start: 0, end: 0, special: "end" } },
     ];
     const maxCount = Math.max(1, ...edges.map((item) => item.count), ...Object.values(starts).map((v) => number(v) ?? 0), ...Object.values(ends).map((v) => number(v) ?? 0));
     const flowEdges: FlowEdge[] = [
