@@ -1,10 +1,9 @@
 "use client";
 
 import "@xyflow/react/dist/style.css";
-import ELK from "elkjs/lib/elk.bundled.js";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ReactFlow, Background, Controls, MiniMap, Handle, Position, MarkerType, type Node, type Edge as FlowEdge, type NodeProps, type EdgeProps, BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useNodesState, useEdgesState } from "@xyflow/react";
+import { ReactFlow, Background, Controls, MiniMap, Handle, Position, MarkerType, type Node, type Edge as FlowEdge, type NodeProps, type EdgeProps, BaseEdge, EdgeLabelRenderer, getBezierPath, useNodesState, useEdgesState } from "@xyflow/react";
 import { ArrowLeft, GitBranch, Activity, Users, Repeat2, TrendingUp, Filter, Network, X } from "lucide-react";
 
 type AnyRecord = Record<string, unknown>;
@@ -36,20 +35,17 @@ function ActivityNode({ data }: NodeProps<Node<{ title: string; incoming: number
     <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
   </div>;
 }
-type RoutedPoint = { x: number; y: number };
-function FrequencyEdge({ id, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null; reciprocal?: boolean; elkPoints?: RoutedPoint[]; labelPoint?: RoutedPoint }>>) {
-  const points = data?.elkPoints;
-  // Prefer the exact route produced by ELK. Fall back to a simple in-canvas
-  // orthogonal route only while the async layout is still being calculated.
-  const route = points && points.length >= 2
-    ? points
-    : [{ x: sourceX, y: sourceY }, { x: (sourceX + targetX) / 2, y: sourceY }, { x: (sourceX + targetX) / 2, y: targetY }, { x: targetX, y: targetY }];
-  const path = route.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
-  const labelPoint = data?.labelPoint ?? route[Math.floor(route.length / 2)];
+function FrequencyEdge({ id, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null; reciprocal?: boolean }>>) {
+  const [path, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    curvature: data?.reciprocal ? 0.35 : 0.25,
+  });
   const isReciprocal = Boolean(data?.reciprocal);
-  return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...(isReciprocal ? { strokeWidth: Math.max(2, Number(style?.strokeWidth ?? 1.5)), strokeOpacity: .9 } : {}) }}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${isReciprocal ? "border-sky-300/40 bg-sky-950/95 text-sky-100" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelPoint.x}px, ${labelPoint.y}px)` }} title={data?.probability == null ? "Transition frequency" : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{(data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
+  return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...(isReciprocal ? { strokeWidth: Math.max(2, Number(style?.strokeWidth ?? 1.5)), strokeOpacity: .9 } : {}) }}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${isReciprocal ? "border-sky-300/40 bg-sky-950/95 text-sky-100" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? "Transition frequency" : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{(data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
 }
-const elk = new ELK();
 const nodeTypes = { activity: ActivityNode };
 const edgeTypes = { frequency: FrequencyEdge };
 
@@ -140,68 +136,11 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
   const [nodes, setNodes, onNodesChange] = useNodesState(built.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(built.edges);
   useEffect(() => {
-    let cancelled = false;
+    // Keep the deterministic default layout from the first render. Do not run
+    // a second asynchronous layout that shifts nodes after the graph appears.
+    setNodes(built.nodes);
     setEdges(built.edges);
     setSelectedItem(null);
-    const graph = {
-      id: "root",
-      layoutOptions: {
-        "elk.algorithm": "layered",
-        "elk.direction": "RIGHT",
-        "elk.edgeRouting": "ORTHOGONAL",
-        "elk.spacing.nodeNode": "58",
-        "elk.layered.spacing.nodeNodeBetweenLayers": "110",
-        "elk.layered.spacing.edgeNodeBetweenLayers": "36",
-        "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
-        "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
-        "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
-        "elk.padding": "[top=45,left=45,bottom=45,right=45]"
-      },
-      children: built.nodes.map((node) => {
-        const special = Boolean((node.data as AnyRecord).special);
-        return { id: node.id, width: special ? 66 : 190, height: special ? 66 : 78 };
-      }),
-      edges: built.edges.map((edge) => ({
-        id: edge.id,
-        sources: [edge.source],
-        targets: [edge.target]
-      }))
-    };
-    elk.layout(graph).then((layout) => {
-      if (cancelled) return;
-      const positions = new Map<string, { x: number; y: number }>((layout.children ?? []).map((node) => [node.id, { x: node.x ?? 0, y: node.y ?? 0 }]));
-      // ELK returns absolute edge sections and bend points. Use those exact
-      // coordinates in the custom React Flow edge instead of recalculating paths.
-      const routedById = new Map<string, { points: RoutedPoint[]; labelPoint: RoutedPoint }>();
-      // The inferred graph input type omits ELK's output-only section geometry,
-      // so narrow the returned edges to the output shape before reading sections.
-      const routedEdges = layout.edges as Array<{
-        id: string;
-        sections?: Array<{
-          startPoint?: RoutedPoint;
-          endPoint?: RoutedPoint;
-          bendPoints?: RoutedPoint[];
-        }>;
-      }> | undefined;
-      for (const edge of routedEdges ?? []) {
-        const section = edge.sections?.[0];
-        if (!section?.startPoint || !section?.endPoint) continue;
-        const points = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint].map((point) => ({ x: point.x, y: point.y }));
-        const middle = points[Math.floor(points.length / 2)];
-        routedById.set(edge.id, { points, labelPoint: middle });
-      }
-      setNodes(built.nodes.map((node): Node => ({ ...node, position: positions.get(node.id) ?? node.position })));
-      setEdges(built.edges.map((edge) => {
-        const routed = routedById.get(edge.id);
-        if (!routed) return edge;
-        const edgeData = record(edge.data);
-        return { ...edge, data: { ...edgeData, elkPoints: routed.points, labelPoint: routed.labelPoint } };
-      }));
-    }).catch((error: unknown) => {
-      console.error("ELK graph layout failed:", error);
-      if (!cancelled) setNodes(built.nodes);
-    });
-    return () => { cancelled = true; };
   }, [built, setNodes, setEdges]);
   const originalEdges = dfg.edges ?? [];
   if (!originalEdges.length) return <section className="rounded-2xl border border-white/[.09] bg-[#0b0c10]/90 p-5"><h3 className="text-sm font-semibold">{title}</h3><p className="mt-1 text-xs text-zinc-600">{description}</p><div className="mt-5"><Empty text="No transitions remain in this DFG. Check event mapping and the frequency filter."/></div></section>;
