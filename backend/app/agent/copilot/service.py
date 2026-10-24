@@ -159,8 +159,9 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
         yield _emit("progress", {"label": "Tracing the funding chain across PostgreSQL and Helius", "state": "active"})
         address_pattern = re.compile(r"(?<![1-9A-HJ-NP-Za-km-z])([1-9A-HJ-NP-Za-km-z]{32,44})(?![1-9A-HJ-NP-Za-km-z])")
         queue, queued, visited = [wallet_address], {wallet_address}, set()
+        helius_unavailable = False
         wallet_data: dict[str, dict[str, Any]] = {wallet_address: direct_data} if "direct_data" in locals() else {}
-        while queue and len(helius_results) < MAX_HELIUS_CALLS:
+        while queue and len(visited) < MAX_HELIUS_CALLS:
             current = queue.pop(0)
             if current in visited:
                 continue
@@ -180,6 +181,9 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
             if isinstance(profile_funder, str) and profile_funder not in visited and profile_funder not in queued:
                 queue.append(profile_funder)
                 queued.add(profile_funder)
+            if helius_unavailable:
+                yield _emit("progress", {"label": f"Checking indexed funding records for wallet {current[:6]}…{current[-4:]}", "state": "active"})
+                continue
             yield _emit("progress", {"label": f"Checking funding source for wallet {current[:6]}…{current[-4:]}", "state": "active"})
             task = asyncio.create_task(_helius_mcp_fallback(request.message, context_text, wallet_address_override=current, action_override="getWalletFundedBy"))
             try:
@@ -194,6 +198,9 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
             if result:
                 helius_results.append({"wallet_address": current, "tool": result[0], "result": result[1]})
                 if result[0] == "HELIUS_MCP_ERROR":
+                    # An MCP startup/transport failure is usually server-wide; don't
+                    # relaunch the same broken subprocess for every upstream wallet.
+                    helius_unavailable = True
                     yield _emit("progress", {"label": f"Helius MCP error: {str(result[1])[:900]}", "state": "error"})
                 else:
                     candidates = []
