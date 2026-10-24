@@ -409,6 +409,9 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                                         "action": action_name,
                                         "address": wallet_address,
                                         "detail": "standard",
+                                        "_feedback": "none",
+                                        "_feedbackTool": "none",
+                                        "_model": "deepseek-chat",
                                     },
                                 )
                                 logger.warning(
