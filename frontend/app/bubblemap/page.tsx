@@ -86,7 +86,17 @@ export default function BubblemapPage() {
     const query = search.trim().toLowerCase();
     return nodes.filter((node) => String(node.id ?? "").toLowerCase().includes(query));
   }, [nodes, search]);
-  const visibleIds = useMemo(() => new Set(visibleNodes.map((node) => String(node.id ?? "")), [visibleNodes]);
+  const visibleIds = useMemo(() => new Set(visibleNodes.map((node) => String(node.id ?? ""))), [visibleNodes]);
+  const degrees = useMemo(() => {
+    const result = new Map<string, number>();
+    for (const edge of edges) {
+      const source = String(edge.source ?? "");
+      const target = String(edge.target ?? "");
+      result.set(source, (result.get(source) ?? 0) + 1);
+      result.set(target, (result.get(target) ?? 0) + 1);
+    }
+    return result;
+  }, [edges]);
   const selectedNode = nodes.find((node) => String(node.id ?? "") === selected);
   const selectedFeatures = selected ? { ...(features[selected] ?? {}), ...(selectedNode ?? {}) } : null;
 
@@ -151,7 +161,7 @@ export default function BubblemapPage() {
                     const id = String(node.id ?? "");
                     const p = positions.get(id);
                     if (!p) return null;
-                    const degree = num(node.in_degree) + num(node.out_degree);
+                    const degree = Math.max(num(node.in_degree) + num(node.out_degree), degrees.get(id) ?? 0);
                     const radius = Math.min(7, 2.3 + Math.log2(degree + 1) * 1.2);
                     const active = selected === id;
                     const color = mode === "funding" ? (degree >= 4 ? "#fb7185" : "#f59e0b") : (degree >= 5 ? "#fb7185" : degree >= 2 ? "#38bdf8" : "#71717a");
