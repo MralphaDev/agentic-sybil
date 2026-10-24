@@ -211,6 +211,24 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
                                 if final_rows:
                                     sql, rows = final_sql, final_rows
                                     database_has_transaction_rows = True
+                else:
+                    # Even an empty diagnostic result is evidence: re-plan once with
+                    # that observation instead of immediately reporting failure.
+                    empty_diag_context = (
+                        context_text
+                        + "\nPrevious answer query returned zero rows. SQL: " + safe_sql
+                        + "\nDiagnostic query: " + (safe_diagnostic_sql if diagnostic_sql else "planner returned no diagnostic SQL")
+                        + "\nDiagnostic result: no rows. Reconsider whether the diagnostic predicates were too restrictive, "
+                          "then produce the best-supported query for the original user goal."
+                    )
+                    final_sql, final_reason = await _generate_sql(request.message, empty_diag_context)
+                    if final_sql:
+                        safe_final_sql = _validate_sql(final_sql)
+                        yield _emit("progress", {"label": ("Replanning after empty diagnostic: " + final_reason)[:100], "state": "active"})
+                        final_rows = await asyncio.to_thread(_run_readonly_query, safe_final_sql)
+                        if final_rows:
+                            sql, rows = final_sql, final_rows
+                            database_has_transaction_rows = True
         else:
             sql_error = "SQL planner did not produce a query"
     except Exception as exc:
