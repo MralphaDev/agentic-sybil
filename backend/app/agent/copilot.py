@@ -186,8 +186,8 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
     try:
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
-    except ImportError:
-        return None
+    except ImportError as exc:
+        return ("HELIUS_MCP_ERROR", f"Python MCP client is not installed: {exc}")
 
     # Windows requires cmd.exe to launch the npx.cmd shim; Unix can exec npx directly.
     if os.name == "nt":
@@ -202,7 +202,7 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
         env={**os.environ, "HELIUS_API_KEY": api_key},
     )
     try:
-        async with asyncio.timeout(14):
+        async with asyncio.timeout(40):
             async with stdio_client(params) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
@@ -216,7 +216,7 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                         )
                     ]
                     if not tools:
-                        return None
+                        return ("HELIUS_MCP_ERROR", "Helius MCP started but exposed no read-only tools.")
                     tool_catalog = [
                         {"name": tool.name, "description": (tool.description or "")[:350],
                          "inputSchema": tool.inputSchema}
@@ -224,11 +224,13 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                     ]
                     selection = await _get_llm(200).ainvoke([
                         SystemMessage(content=(
-                            "Choose at most one read-only Helius MCP tool for the user question. "
-                            "Return only JSON {\"name\":\"tool name\",\"arguments\":{...}}. "
-                            "Only use arguments supported by that tool's input schema. If no tool "
-                            "is suitable, return {\"name\":\"\",\"arguments\":{}}. "
-                            "Do not investigate repeatedly."
+                            "Choose exactly one suitable read-only Helius MCP tool when the user asks "
+                            "for live wallet or transaction data. Return only JSON {\"name\":\"tool name\",\"arguments\":{...}}. "
+                            "Only use arguments supported by that tool's input schema. For a wallet's "
+                            "transaction history/pattern, prefer the transaction-history action/tool, "
+                            "use the supplied wallet address, and honor a requested limit up to 50. "
+                            "Never choose tools that write, sign, send, stake, swap, or modify state. "
+                            "If no suitable read-only tool exists, return {\"name\":\"\",\"arguments\":{}}."
                         )),
                         HumanMessage(content=(
                             f"Question: {question}\nInvestigation context: {context_text[:2500]}\n"
@@ -240,19 +242,19 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                         raw = "".join(part.get("text", "") for part in raw if isinstance(part, dict))
                     match = re.search(r"\{.*\}", str(raw), re.DOTALL)
                     if not match:
-                        return None
+                        return ("HELIUS_MCP_ERROR", "DeepSeek could not select a Helius tool from the available tool schemas.")
                     chosen = json.loads(match.group(0))
                     name = chosen.get("name")
                     if name not in {tool.name for tool in tools}:
-                        return None
+                        return ("HELIUS_MCP_ERROR", "Selected Helius tool name was not present in the live tool list.")
                     result = await session.call_tool(name, chosen.get("arguments") or {})
                     if getattr(result, "isError", False):
-                        return None
+                        return ("HELIUS_MCP_ERROR", json.dumps(result.content, ensure_ascii=False, default=str)[:1500])
                     serialized = json.dumps(result.content, ensure_ascii=False, default=str)
                     return name, serialized[:7000]
-    except Exception:
-        # RPC fallback is best-effort; never leave the Copilot running indefinitely.
-        return None
+    except Exception as exc:
+        # Preserve a concise diagnostic instead of silently hiding MCP startup/RPC failures.
+        return ("HELIUS_MCP_ERROR", f"{type(exc).__name__}: {str(exc)[:1200]}")
 
 
 async def _classify_intent(question: str) -> str:
@@ -365,8 +367,21 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
         sql_error = str(exc)[:240]
 
     helius_result = None
-    if not rows:
-        yield _emit("progress", {"label": "Database has no sufficient matching rows; checking Helius RPC", "state": "active"})
+    # Explicit Helius/live-RPC requests must call Helius even when PostgreSQL has
+    # some rows; indexed data is not a substitute for the requested live source.
+    explicit_helius_request = bool(re.search(
+        r"\bhelius\b|\bmcp\b|\brpc\b|live on.chain|on.chain (?:history|data|transactions)|"
+        r"full transaction history|fetch transactions from chain",
+        request.message,
+        re.IGNORECASE,
+    ))
+    if explicit_helius_request or not rows:
+        label = (
+            "Calling Helius MCP for live on-chain evidence"
+            if explicit_helius_request
+            else "Database has no sufficient matching rows; checking Helius RPC"
+        )
+        yield _emit("progress", {"label": label, "state": "active"})
         helius_result = await _helius_mcp_fallback(request.message, context_text)
 
     evidence = {
