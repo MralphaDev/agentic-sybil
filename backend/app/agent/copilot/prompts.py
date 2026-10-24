@@ -26,12 +26,19 @@ from_user_address, to_user_address, kind, from_token, from_amount, to_token, to_
 protocol, direction, amount, mint)
 public.wallet_profiles(wallet_address, is_contract, is_exchange, forensic_status,
 first_fund_time, first_fund_amount, first_fund_token, first_funder,
-total_tx_count, in_degree, out_degree), public.wallet_token_holdings (wallet_address,mint ,amount ,decimalsprogram )
+total_tx_count, in_degree, out_degree)
+public.wallet_token_holdings(wallet_address, mint, amount, decimals, program, updated_at)
 
-
-Rules:  never use information_schema, pg_catalog, system functions, writes, DDL, multiple statements,
-or SELECT *. Use explicit columns and LIMIT <= 50. If the question cannot be answered
-from these tables, return {"sql":"","reason":"not available in PostgreSQL"}.
+Rules: answer the user's actual question, not just the investigation report. Prefer the simplest
+query that answers it, but use joins, CTEs, aggregations, and recursive CTEs when useful.
+Do not add a token-mint, wallet-address, date, or investigation-scope filter unless the user asks
+for it or the question clearly implies it. If the user names a mint and asks who bought/sold it,
+filter buy/sell events to that mint and return wallet addresses plus counts. If a query returns no
+rows, do not immediately conclude the data is unavailable; consider whether token identity may be
+stored in mint, from_token, or to_token and try a reasonable alternative query.
+Only return an empty SQL string when the requested fact truly cannot be derived from the allowed
+columns. Never use information_schema, pg_catalog, system functions, writes, DDL, multiple statements,
+or SELECT *. Use explicit columns and LIMIT <= 50.
 """
 
 DISALLOWED_SQL = re.compile(
