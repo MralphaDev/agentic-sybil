@@ -217,11 +217,19 @@ def discover_dfg(df: pd.DataFrame) -> dict:
         )
 
     print(f"Filtered DFG JSON saved to: {filtered_json_path}")
-    # 6. Return exactly the original JSON structure.
+    # Return both graph variants so the dashboard can render them directly.
+    # Keep the original raw DFG shape backward-compatible.
     return {
         "edges": edges,
         "start_activities": start_activities_result,
         "end_activities": end_activities_result,
+        "filtered_dfg": filtered_json,
+        "filtering_statistics": {
+            "original_edge_count": len(edges),
+            "filtered_edge_count": len(filtered_json["edges"]),
+            "min_edge_count": 5,
+            "excluded_activities": sorted(excluded_activities),
+        },
     }
 
 
