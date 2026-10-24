@@ -15,14 +15,13 @@ def analyze_first_activity_concentration(
     Analyze the distribution of each wallet's oldest recorded activity.
 
     Analysis:
-        Four-hour distribution from 2025-09-01 to 2025-10-10 inclusive.
+        Four-hour distribution across the full observed time range.
 
     Notes:
         - Each wallet contributes only its oldest recorded activity.
         - All timestamps are normalized to UTC.
-        - Date filtering happens AFTER finding each wallet's
-          oldest activity in the full input dataset.
-        - Empty time buckets are not materialized.
+        - Empty time buckets are materialized between the first and last
+          observed activity so the frontend can plot a continuous timeline.
         - Returned statistics are JSON-compatible.
     """
 
@@ -91,29 +90,25 @@ def analyze_first_activity_concentration(
     wallet_count = int(len(first_activity))
 
     # ---------------------------------------------------------
-    # 4. Define the four-hour analysis window
+    # 4. Build a four-hour distribution across the observed data.
+    #    Do not hard-code dates: investigations may cover any period.
     # ---------------------------------------------------------
-    four_hour_start = pd.Timestamp(
-        "2025-09-01 00:00:00", tz="UTC"
-    )
-
-    four_hour_end = pd.Timestamp(
-        "2025-10-11 00:00:00", tz="UTC"
-    )
-
-    # ---------------------------------------------------------
-    # 5. Calculate four-hour distribution
-    # ---------------------------------------------------------
-    four_hour_data = first_activity[
-        (first_activity >= four_hour_start)
-        & (first_activity < four_hour_end)
-    ]
-
     four_hour = (
-        four_hour_data.dt.floor("4h")
+        first_activity.dt.floor("4h")
         .value_counts()
         .sort_index()
     )
+
+    # Materialize empty buckets so the frontend can show elapsed time
+    # faithfully rather than connecting only non-empty timestamps.
+    if not four_hour.empty:
+        full_index = pd.date_range(
+            start=four_hour.index.min(),
+            end=four_hour.index.max(),
+            freq="4h",
+            tz="UTC",
+        )
+        four_hour = four_hour.reindex(full_index, fill_value=0)
 
     # ---------------------------------------------------------
     # 6. Calculate distribution statistics
