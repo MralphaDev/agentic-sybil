@@ -172,7 +172,7 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
         height: node.id === "__START__" || node.id === "__END__" ? 66 : ((node.data as AnyRecord).rework ? 112 : 88),
       })),
       edges: built.edges
-        .filter((edge) => edge.source !== edge.target && edge.source !== "__START__" && edge.target !== "__END__")
+        .filter((edge) => edge.source !== edge.target)
         .map((edge) => ({ id: edge.id, sources: [edge.source], targets: [edge.target] })),
     };
     elk.layout(elkGraph).then((layout) => {
