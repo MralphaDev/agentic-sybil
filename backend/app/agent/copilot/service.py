@@ -76,6 +76,15 @@ async def _answer_report_question(question: str, context_text: str) -> AsyncIter
                 if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
                     yield _emit("token", {"content": part["text"]})
 
+def _is_funding_question(question: str) -> bool:
+    """Recognize natural-language requests that need funding-source tracing."""
+    return bool(re.search(
+        r"\b(funder|funded by|funding source|funding chain|first fund|who funded|funding wallet|upstream funder|second hop|funding path|trace (?:the )?funds?)\b",
+        question,
+        re.IGNORECASE,
+    ))
+
+
 async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
     # A wallet address is an explicit request for wallet-specific evidence.
     # Do not let the LLM intent classifier route it to report/general and skip lookups.
@@ -149,10 +158,7 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
         r"\bhelius\b|\bmcp\b|\brpc\b|live on.chain|on.chain (?:history|data|transactions)|full transaction history|fetch transactions from chain",
         request.message, re.IGNORECASE,
     ))
-    funding_question = bool(wallet_address and re.search(
-        r"\b(funder|funded by|funding source|funding chain|first fund|who funded|funding wallet|upstream funder|second hop|funding path|trace (?:the )?funds?)\b",
-        request.message, re.IGNORECASE,
-    ))
+    funding_question = bool(wallet_address and _is_funding_question(request.message))
     if funding_question:
         # Partial indexed events are not sufficient for funding-chain questions.
         # Follow discovered funders through PostgreSQL and Helius, bounded to three calls.
