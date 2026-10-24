@@ -22,21 +22,33 @@ def _validate_sql(sql: str) -> str:
         raise ValueError("The generated SQL contains a prohibited operation.")
     if re.search(r"\bselect\s+\*|\b[a-z_][a-z0-9_]*\.\*", query, re.IGNORECASE):
         raise ValueError("SELECT * is not allowed.")
+    # Permit references to CTEs while ensuring every physical table is allowlisted.
+    cte_names = {
+        name.lower()
+        for name in re.findall(
+            r"(?:\bwith\s+|,\s*)(?:recursive\s+)?([a-z_][a-z0-9_]*)\s+as\s*\(",
+            query,
+            re.IGNORECASE,
+        )
+    }
     tables = re.findall(
         r"\b(?:from|join)\s+(?:public\.)?([a-z_][a-z0-9_]*)",
         query,
         re.IGNORECASE,
     )
-    if not tables or any(table.lower() not in ALLOWED_TABLES for table in tables):
-        raise ValueError("SQL must query only the approved public tables.")
-    if re.search(r"\blimit\s+(\d+)", query, re.IGNORECASE):
-        query = re.sub(
-            r"\blimit\s+\d+",
-            f"LIMIT {MAX_ROWS}",
-            query,
-            count=1,
-            flags=re.IGNORECASE,
-        )
+    if not tables or any(table.lower() not in ALLOWED_TABLES and table.lower() not in cte_names for table in tables):
+        raise ValueError("SQL must query only the approved public tables or query-local CTEs.")
+    limit_match = re.search(r"\blimit\s+(\d+)", query, re.IGNORECASE)
+    if limit_match:
+        requested_limit = int(limit_match.group(1))
+        if requested_limit > MAX_ROWS:
+            query = re.sub(
+                r"\blimit\s+\d+",
+                f"LIMIT {MAX_ROWS}",
+                query,
+                count=1,
+                flags=re.IGNORECASE,
+            )
     else:
         query += f" LIMIT {MAX_ROWS}"
     return query
