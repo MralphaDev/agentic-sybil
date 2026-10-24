@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 export type PipelineStage = {
   step: string;
   title: string;
@@ -14,16 +16,118 @@ type InvestigationProgressProps = {
   failed: boolean;
 };
 
+function StageIcon({ state }: { state: PipelineStage["state"] }) {
+  if (state === "running") {
+    return (
+      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/10 border-t-red-400" />
+    );
+  }
+
+  if (state === "finished") {
+    return <span className="text-sm text-emerald-400">✓</span>;
+  }
+
+  return <span className="text-sm font-semibold text-red-400">!</span>;
+}
+
+function StageRow({
+  stage,
+  nested = false,
+}: {
+  stage: PipelineStage;
+  nested?: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-start gap-3 rounded-xl border p-3 transition-colors ${
+        stage.state === "running"
+          ? "border-red-400/20 bg-red-500/[0.045]"
+          : stage.state === "failed"
+            ? "border-red-400/20 bg-red-950/20"
+            : "border-white/[0.06] bg-white/[0.015]"
+      } ${nested ? "ml-4" : ""}`}
+    >
+      <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+        <StageIcon state={stage.state} />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p
+          className={`text-xs font-medium ${
+            stage.state === "running"
+              ? "text-red-200"
+              : stage.state === "failed"
+                ? "text-red-300"
+                : "text-zinc-300"
+          }`}
+        >
+          {stage.title}
+        </p>
+        <p className="mt-1 text-[11px] leading-5 text-zinc-500">
+          {stage.detail}
+        </p>
+      </div>
+
+      {stage.elapsed_seconds !== undefined && (
+        <span className="shrink-0 pt-0.5 font-mono text-[10px] text-zinc-600">
+          {stage.elapsed_seconds.toFixed(2)}s
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function InvestigationProgress({
   stages,
   backendStatus,
   failed,
 }: InvestigationProgressProps) {
+  const processMiningParent = stages.find(
+    (stage) => stage.step === "12_run_process_mining",
+  );
+  const processMiningChildren = stages.filter((stage) =>
+    /^12_\d{2}_/.test(stage.step),
+  );
+  const mainStages = stages.filter(
+    (stage) =>
+      !/^12_\d{2}_/.test(stage.step) &&
+      stage.step !== "12_run_process_mining",
+  );
   const activeStage = [...stages]
     .reverse()
     .find((stage) => stage.state === "running");
+  const completedCount = stages.filter(
+    (stage) => stage.state === "finished",
+  ).length;
 
-  const latestStage = stages[stages.length - 1];
+  const content: ReactNode[] = mainStages.map((stage) => (
+    <StageRow key={stage.step} stage={stage} />
+  ));
+
+  if (processMiningParent || processMiningChildren.length > 0) {
+    const parentStage: PipelineStage = processMiningParent ?? {
+      step: "12_run_process_mining",
+      title: "Running Process Mining",
+      detail: "Analyzing wallet actions, behavioral variants, and intermediary activity.",
+      state: processMiningChildren.some((stage) => stage.state === "running")
+        ? "running"
+        : processMiningChildren.some((stage) => stage.state === "failed")
+          ? "failed"
+          : "finished",
+    };
+
+    content.push(
+      <div
+        key="process-mining-group"
+        className="space-y-2 rounded-xl border border-white/[0.07] bg-white/[0.015] p-3"
+      >
+        <StageRow stage={parentStage} />
+        {processMiningChildren.map((stage) => (
+          <StageRow key={stage.step} stage={stage} nested />
+        ))}
+      </div>,
+    );
+  }
 
   return (
     <div className="min-h-[340px] space-y-5 py-2">
@@ -33,8 +137,7 @@ export default function InvestigationProgress({
             <span className="text-lg font-semibold text-red-300">!</span>
           ) : activeStage ? (
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/10 border-t-red-400" />
-          ) : stages.length > 0 &&
-            stages.every((stage) => stage.state === "finished") ? (
+          ) : stages.length > 0 && stages.every((stage) => stage.state === "finished") ? (
             <span className="text-lg text-emerald-300">✓</span>
           ) : (
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/10 border-t-red-400" />
@@ -46,10 +149,9 @@ export default function InvestigationProgress({
             {failed
               ? "Investigation failed"
               : activeStage?.title ??
-                latestStage?.title ??
+                stages[stages.length - 1]?.title ??
                 "Preparing investigation results"}
           </p>
-
           <p className="mt-2 text-xs leading-5 text-zinc-500">
             {failed
               ? "The backend reported an error while processing this investigation."
@@ -79,62 +181,10 @@ export default function InvestigationProgress({
               Pipeline progress
             </p>
             <p className="text-[10px] tabular-nums text-zinc-600">
-              {stages.filter((stage) => stage.state === "finished").length}
-              {" / "}
-              {stages.length} steps completed
+              {completedCount} / {stages.length} steps completed
             </p>
           </div>
-
-          <div className="space-y-2">
-            {stages.map((stage) => (
-              <div
-                key={stage.step}
-                className={`flex items-start gap-3 rounded-xl border p-3 transition-colors ${
-                  stage.state === "running"
-                    ? "border-red-400/20 bg-red-500/[0.045]"
-                    : stage.state === "failed"
-                      ? "border-red-400/20 bg-red-950/20"
-                      : "border-white/[0.06] bg-white/[0.015]"
-                }`}
-              >
-                <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
-                  {stage.state === "running" ? (
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/10 border-t-red-400" />
-                  ) : stage.state === "finished" ? (
-                    <span className="text-sm text-emerald-400">✓</span>
-                  ) : (
-                    <span className="text-sm font-semibold text-red-400">
-                      !
-                    </span>
-                  )}
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <p
-                    className={`text-xs font-medium ${
-                      stage.state === "running"
-                        ? "text-red-200"
-                        : stage.state === "failed"
-                          ? "text-red-300"
-                          : "text-zinc-300"
-                    }`}
-                  >
-                    {stage.title}
-                  </p>
-
-                  <p className="mt-1 text-[11px] leading-5 text-zinc-500">
-                    {stage.detail}
-                  </p>
-                </div>
-
-                {stage.elapsed_seconds !== undefined && (
-                  <span className="shrink-0 pt-0.5 font-mono text-[10px] text-zinc-600">
-                    {stage.elapsed_seconds.toFixed(2)}s
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
+          <div className="space-y-2">{content}</div>
         </div>
       )}
     </div>
