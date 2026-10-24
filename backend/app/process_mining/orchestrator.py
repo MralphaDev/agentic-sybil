@@ -168,6 +168,7 @@ def _timed_step(
 def run_process_mining(
     events: list[dict],
     target_token_mint: str,
+    token_mint_date: str | None = None,
 ) -> dict:
     if not events:
         print("No events found.")
@@ -196,6 +197,7 @@ def run_process_mining(
         "12_02_first_activity_concentration",
         analyze_first_activity_concentration,
         df,
+        token_mint_date=token_mint_date,
     )
 
     df = _timed_step(
