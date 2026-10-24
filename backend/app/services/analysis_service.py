@@ -261,11 +261,11 @@ def execute_analysis(target_token_mint: str) -> dict:
             aggregated_tx_graph=agg_graph,
         )
 
-        '''investigation_result = timed_step(
+        investigation_result = timed_step(
             "14_run_agent_investigation",
             run_agent_investigation,
             context,
-        )'''
+        )
 
         first_fund_data = timed_step(
             "15_serialize_first_fund_graph",
@@ -323,7 +323,7 @@ def execute_analysis(target_token_mint: str) -> dict:
                 "data": aggregated_tx_data,
             },
             "process_mining_result": process_mining_result,
-            #"investigation": investigation_result,
+            "investigation": investigation_result,
         }
 
     finally:
