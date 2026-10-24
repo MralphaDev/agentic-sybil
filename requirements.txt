@@ -1,38 +1,26 @@
-﻿# --- API and application ---
-fastapi
+﻿fastapi
 uvicorn[standard]
 python-multipart
+httpx
+
 pydantic
 pydantic-settings
 python-dotenv
+starlette
+typing_extensions
 
-# --- HTTP and data ingestion ---
-httpx
-tenacity
-
-# --- Database ---
-psycopg[binary,pool]
-sqlalchemy
-pymysql
-alembic
-
-# --- Data processing and graph analysis ---
-numpy
-pandas
-scikit-learn
-networkx
-hdbscan
-
-# --- AI agent and LLM integration ---
-langgraph
 langchain-core
 langchain-openai
+langgraph
 mcp
 
-# --- Testing ---
-pytest
-pytest-asyncio
-respx
+numpy
+pandas
+networkx
+hdbscan
+matplotlib
+pm4py
+rapidfuzz
 
-# --- Code quality ---
-ruff
+psycopg[binary]
+psycopg-pool

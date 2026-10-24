@@ -13,7 +13,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from app.agent.sse_manager import encode_sse, get_run
-from app.agent.helius_routing import is_helius_tool_error, select_wallet_action
 from app.core.config import ENV_FILE, settings
 from app.database.connection import get_connection
 
@@ -22,22 +21,20 @@ load_dotenv(ENV_FILE, override=False)
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/investigations", tags=["Investigation Copilot"])
-MAX_SQL_CALLS = 1
-MAX_HELIUS_CALLS = 1
+MAX_SQL_CALLS = 3
+MAX_HELIUS_CALLS = 3
 MAX_OUTPUT_TOKENS = 300
 MAX_ROWS = 50
 MAX_QUESTION_CHARS = 1200
 SQL_TIMEOUT_MS = 5000
 
 COPILOT_SYSTEM = """You are Investigation Copilot for a Solana wallet investigation.
-Answer simple-to-medium complexity questions using the current investigation report
+Answer questions using the current investigation report
 and read-only PostgreSQL data. Be concise, factual, and explicit when data is missing.
-The investigation report is context, not proof beyond its stated evidence.
-Do not reveal hidden reasoning. The UI displays operational progress events instead.
+The investigation report is context
 Never request secrets or suggest writing to the database. SQL is read-only.
-Use only public.wallet_event_log and public.wallet_profiles, with columns provided
-in the schema. Never query other schemas or tables. SQL must be a single SELECT or
-WITH ... SELECT statement, with a LIMIT no greater than 50.
+Use only public.wallet_event_log， public.wallet_profiles,wallet_token_holdings. with columns provided
+in the schema. You may join the tables for more complex queries. SQL must be with a LIMIT no greater than 50.
 """
 
 SQL_SYSTEM = """Generate exactly one PostgreSQL SELECT query answering the user's question.
@@ -48,9 +45,10 @@ from_user_address, to_user_address, kind, from_token, from_amount, to_token, to_
 protocol, direction, amount, mint)
 public.wallet_profiles(wallet_address, is_contract, is_exchange, forensic_status,
 first_fund_time, first_fund_amount, first_fund_token, first_funder,
-total_tx_count, in_degree, out_degree)
-Rules: only SELECT or WITH ending in SELECT; only these two tables; never use
-information_schema, pg_catalog, system functions, writes, DDL, multiple statements,
+total_tx_count, in_degree, out_degree), public.wallet_token_holdings (wallet_address,mint ,amount ,decimalsprogram )
+
+
+Rules:  never use information_schema, pg_catalog, system functions, writes, DDL, multiple statements,
 or SELECT *. Use explicit columns and LIMIT <= 50. If the question cannot be answered
 from these tables, return {"sql":"","reason":"not available in PostgreSQL"}.
 """
@@ -365,7 +363,19 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                     # Route wallet-specific questions to the relevant read-only Wallet API
                     # action. Keep transaction history as the default when no clearer intent
                     # is expressed; never expose wallet-write actions through this fallback.
-                    wallet_action = select_wallet_action(question)
+                    q = question.lower()
+                    if re.search(r"\b(identity|who owns|owner of|label|exchange|known wallet|wallet label)\b", q):
+                        wallet_action = "getWalletIdentity"
+                    elif re.search(r"\b(funded by|funding source|first fund|who funded|funding wallet)\b", q):
+                        wallet_action = "getWalletFundedBy"
+                    elif re.search(r"\b(transfers?|sent|received|counterpart(y|ies)|inbound|outbound)\b", q):
+                        wallet_action = "getWalletTransfers"
+                    elif re.search(r"\b(token balances?|spl balances?|token holdings?|holdings|portfolio|usd value|asset balances?)\b", q):
+                        wallet_action = "getWalletBalances" if re.search(r"\b(portfolio|usd value|total value)\b", q) else "getTokenBalances"
+                    elif re.search(r"\b(sol balance|native balance|how much sol|sol amount|wallet balance|balance of)\b", q):
+                        wallet_action = "getBalance"
+                    else:
+                        wallet_action = "getWalletHistory"
 
                     preferred_router_order = (
                         [("heliuswallet", wallet_action)]
@@ -524,8 +534,10 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
                     )
                     # Some Helius MCP server versions wrap validation failures in a
                     # text content block while leaving the MCP-level isError flag false.
-                    returned_validation_error = is_helius_tool_error(serialized, is_error)
-                    if returned_validation_error:
+                    returned_validation_error = bool(
+                        re.search(r"MCP error -\\d+|Input validation error|Invalid arguments for tool", serialized, re.I)
+                    )
+                    if is_error or returned_validation_error:
                         detail = serialized[:5000]
                         logger.error(
                             "[Helius MCP] Tool returned isError=true; tool=%s action=%s result=%s",
@@ -756,10 +768,7 @@ async def _stream_answer(request: CopilotRequest) -> AsyncIterator[str]:
                 "Answer the user's question directly using returned evidence. Never show or suggest SQL, "
                 "database queries, code, internal validation messages, or implementation details. "
                 "If PostgreSQL has no matching rows or its query fails, use the Helius result if present. "
-                "If both sources fail, state briefly that the lookup failed and summarize the source failure "
-                "without exposing SQL or internal validation text. Never claim Helius succeeded unless a "
-                "successful Helius tool result is present. A Helius tool result named HELIUS_MCP_ERROR is a failure, "
-                "not on-chain evidence."
+               
             )),
         ]
         async for chunk in _get_llm(MAX_OUTPUT_TOKENS).astream(messages):

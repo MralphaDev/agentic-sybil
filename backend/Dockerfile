@@ -1,6 +1,12 @@
+
 FROM node:22-bookworm-slim AS node-runtime
 
 FROM python:3.12-slim
+
+# Install Graphviz for pm4py process-mining graph visualization.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends graphviz \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

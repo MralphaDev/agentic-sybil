@@ -2835,7 +2835,7 @@
       "wallets_in_window": 408,
       "total_wallets": 467,
       "share_of_all_wallets": 0.873662,
-      "nonempty_buckets": 181,
+      "nonempty_buckets": 16,
       "peak_bucket": "2025-09-24T08:00:00+00:00",
       "peak_count": 199,
       "peak_share_within_window": 0.487745,
