@@ -39,7 +39,7 @@ function ActivityNode({ id, data }: NodeProps<Node<{ title: string; incoming: nu
     <Handle id="loop-source" type="source" position={Position.Right} style={{ top: "66%" }} className="!h-2 !w-2 !border-0 !bg-amber-300"/>
   </div>;
 }
-function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null; reciprocal?: boolean; selfLoop?: boolean }>>) {
+function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null; reciprocal?: boolean; selfLoop?: boolean; routePoints?: { x: number; y: number }[] }>>) {
   const selfLoop = Boolean(data?.selfLoop || source === target);
   const isReciprocal = Boolean(data?.reciprocal);
   const [bezierPath, bezierLabelX, bezierLabelY] = getBezierPath({
@@ -54,9 +54,14 @@ function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY,
   // Self-loops use the dedicated pair of handles on the right side of a node.
   const loopReach = 24;
   const loopPath = `M ${sourceX},${sourceY} C ${sourceX + loopReach},${sourceY} ${targetX + loopReach},${targetY} ${targetX},${targetY}`;
-  const path = selfLoop ? loopPath : (isReciprocal ? bezierPath : orthogonalPath);
-  const labelX = selfLoop ? Math.max(sourceX, targetX) + loopReach + 12 : (isReciprocal ? bezierLabelX : orthogonalLabelX);
-  const labelY = selfLoop ? (sourceY + targetY) / 2 : (isReciprocal ? bezierLabelY : orthogonalLabelY);
+  const routePoints = data?.routePoints;
+  const routedPath = routePoints && routePoints.length > 1
+    ? routePoints.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ")
+    : null;
+  const path = selfLoop ? loopPath : (routedPath ?? (isReciprocal ? bezierPath : orthogonalPath));
+  const routeLabelPoint = routePoints && routePoints.length > 1 ? routePoints[Math.floor((routePoints.length - 1) / 2)] : null;
+  const labelX = selfLoop ? Math.max(sourceX, targetX) + loopReach + 12 : (routeLabelPoint?.x ?? (isReciprocal ? bezierLabelX : orthogonalLabelX));
+  const labelY = selfLoop ? (sourceY + targetY) / 2 : (routeLabelPoint?.y ?? (isReciprocal ? bezierLabelY : orthogonalLabelY));
   return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...(isReciprocal ? { strokeWidth: Math.max(2, Number(style?.strokeWidth ?? 1.5)), strokeOpacity: .9 } : {}) }}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${selfLoop ? "border-amber-300/40 bg-amber-950/95 text-amber-100" : isReciprocal ? "border-sky-300/40 bg-sky-950/95 text-sky-100" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? (selfLoop ? "Self-loop / rework frequency" : "Transition frequency") : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{(data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
 }
 const nodeTypes = { activity: ActivityNode };
@@ -178,9 +183,24 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
     elk.layout(elkGraph).then((layout) => {
       if (cancelled) return;
       const points = new Map((layout.children ?? []).map((node) => [node.id, { x: node.x ?? 0, y: node.y ?? 0 }]));
+      const routedEdges = new Map((layout.edges ?? []).map((edge) => {
+        const section = edge.sections?.[0];
+        const routePoints = section ? [
+          section.startPoint,
+          ...(section.bendPoints ?? []),
+          section.endPoint,
+        ].map((point) => ({ x: point.x, y: point.y })) : undefined;
+        return [edge.id, routePoints] as const;
+      }));
       setNodes((current) => current.map((node) => {
         const point = points.get(node.id);
         return point ? { ...node, position: point } : node;
+      }));
+      // Apply ELK's actual orthogonal edge sections, not just its node positions.
+      setEdges((current) => current.map((edge) => {
+        const routePoints = routedEdges.get(edge.id);
+        if (!routePoints || routePoints.length < 2 || (edge.data as AnyRecord | undefined)?.selfLoop) return edge;
+        return { ...edge, data: { ...edge.data, routePoints } };
       }));
     }).catch((error: unknown) => {
       // Keep Dagre's deterministic positions if ELK fails for any reason.
