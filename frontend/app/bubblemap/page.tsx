@@ -181,7 +181,28 @@ export default function BubblemapPage() {
             <aside className="space-y-4">
               <section className="rounded-2xl border border-white/[0.09] bg-[#0a0b0f]/90 p-4">
                 <div className="mb-4 flex items-center justify-between"><div><p className="text-[10px] tracking-[0.18em] text-zinc-500">WALLET INSPECTOR</p><h3 className="mt-1 text-sm font-semibold">Node intelligence</h3></div><span className="rounded-md border border-red-500/20 bg-red-500/[0.07] px-2 py-1 text-[9px] text-red-300">FEATURES</span></div>
-                {selected && selectedFeatures ? <><p className="break-all font-mono text-xs leading-5 text-zinc-300">{selected}</p><div className="mt-4 space-y-2">{Object.entries(selectedFeatures).filter(([key, value]) => key !== "id" && value !== undefined && value !== null).slice(0, 18).map(([key, value]) => <div key={key} className="flex items-start justify-between gap-3 border-b border-white/[0.05] pb-2"><span className="shrink-0 text-[11px] text-zinc-600">{key.replaceAll("_", " ")}</span><span className="max-w-[60%] break-all text-right font-mono text-[10px] text-zinc-300">{display(value)}</span></div>)}</> : <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.015] px-4 py-8 text-center"><Network className="mx-auto h-6 w-6 text-zinc-700" /><p className="mt-3 text-xs text-zinc-400">Select a node to inspect its features</p><p className="mt-1 text-[10px] text-zinc-600">Click any point in the network</p></div>}
+                {selected && selectedFeatures ? (
+                  <div>
+                    <p className="break-all font-mono text-xs leading-5 text-zinc-300">{selected}</p>
+                    <div className="mt-4 space-y-2">
+                      {Object.entries(selectedFeatures)
+                        .filter(([key, value]) => key !== "id" && value !== undefined && value !== null && typeof value !== "object")
+                        .slice(0, 18)
+                        .map(([key, value]) => (
+                          <div key={key} className="flex items-start justify-between gap-3 border-b border-white/[0.05] pb-2">
+                            <span className="shrink-0 text-[11px] text-zinc-600">{key.replaceAll("_", " ")}</span>
+                            <span className="max-w-[60%] break-all text-right font-mono text-[10px] text-zinc-300">{display(value)}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.015] px-4 py-8 text-center">
+                    <Network className="mx-auto h-6 w-6 text-zinc-700" />
+                    <p className="mt-3 text-xs text-zinc-400">Select a node to inspect its features</p>
+                    <p className="mt-1 text-[10px] text-zinc-600">Click any point in the network</p>
+                  </div>
+                )}
               </section>
               <button onClick={() => setShowChat(true)} className="group relative w-full overflow-hidden rounded-2xl border border-red-400/20 bg-gradient-to-br from-[#1b0d11] to-[#0b0b10] p-5 text-left transition hover:border-red-400/50">
                 <div className="absolute -right-6 -top-8 h-28 w-28 rounded-full bg-red-500/10 blur-2xl transition group-hover:bg-red-500/20" /><div className="relative flex items-center gap-3"><div className="relative flex h-12 w-12 items-center justify-center rounded-full border border-red-400/30 bg-red-500/10 text-red-300 shadow-[0_0_28px_rgba(239,68,68,.15)]"><Bot size={21} /><span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-[#140b0d] bg-amber-300" /></div><div><p className="text-sm font-semibold text-white">Ask the analyst</p><p className="mt-1 text-xs text-zinc-500">AI assistant preview · not connected</p></div><ChevronRight className="ml-auto h-4 w-4 text-zinc-600 transition group-hover:translate-x-1 group-hover:text-red-300" /></div>
