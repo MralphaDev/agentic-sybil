@@ -36,16 +36,20 @@ function ActivityNode({ data }: NodeProps<Node<{ title: string; incoming: number
     <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
   </div>;
 }
-function FrequencyEdge({ id, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null; reciprocal?: boolean }>>) {
-  const [path, labelX, labelY] = getBezierPath({
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-    curvature: data?.reciprocal ? 0.35 : 0.25,
-  });
+function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null; reciprocal?: boolean; selfLoop?: boolean }>>) {
+  const selfLoop = Boolean(data?.selfLoop || source === target);
   const isReciprocal = Boolean(data?.reciprocal);
-  return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...(isReciprocal ? { strokeWidth: Math.max(2, Number(style?.strokeWidth ?? 1.5)), strokeOpacity: .9 } : {}) }}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${isReciprocal ? "border-sky-300/40 bg-sky-950/95 text-sky-100" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? "Transition frequency" : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{(data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
+  const [normalPath, normalLabelX, normalLabelY] = getBezierPath({
+    sourceX, sourceY, targetX, targetY,
+    curvature: isReciprocal ? 0.42 : 0.25,
+  });
+  // A dedicated loop path keeps repeated activity visible instead of drawing
+  // a zero-length edge through the activity card.
+  const loopPath = `M ${sourceX},${sourceY} C ${sourceX + 72},${sourceY - 86} ${targetX - 72},${targetY - 86} ${targetX},${targetY}`;
+  const path = selfLoop ? loopPath : normalPath;
+  const labelX = selfLoop ? (sourceX + targetX) / 2 : normalLabelX;
+  const labelY = selfLoop ? Math.min(sourceY, targetY) - 48 : normalLabelY;
+  return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...(isReciprocal ? { strokeWidth: Math.max(2, Number(style?.strokeWidth ?? 1.5)), strokeOpacity: .9 } : {}) }}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${selfLoop ? "border-amber-300/40 bg-amber-950/95 text-amber-100" : isReciprocal ? "border-sky-300/40 bg-sky-950/95 text-sky-100" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? (selfLoop ? "Self-loop / rework frequency" : "Transition frequency") : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{(data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
 }
 const nodeTypes = { activity: ActivityNode };
 const edgeTypes = { frequency: FrequencyEdge };
@@ -80,11 +84,11 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
       rankdir: "LR",
       ranker: "network-simplex",
       acyclicer: "greedy",
-      nodesep: 44,
-      ranksep: 115,
-      edgesep: 24,
-      marginx: 36,
-      marginy: 36,
+      nodesep: 58,
+      ranksep: 150,
+      edgesep: 30,
+      marginx: 42,
+      marginy: 42,
     });
     const activityWidth = 206, activityHeight = 88, specialSize = 66;
     layoutGraph.setNode("__START__", { width: specialSize, height: specialSize });
@@ -93,9 +97,8 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
       width: activityWidth,
       height: activityStats.get(name)!.rework > 0 ? activityHeight + 24 : activityHeight,
     }));
-    // Dagre computes a layered layout and handles cycles and reciprocal edges,
-    // unlike assigning every activity its first BFS distance from a root.
-    edges.forEach((edge, index) => layoutGraph.setEdge(edge.source, edge.target, {}, `activity-${index}`));
+    // Include self-loops in the layout graph so Dagre reserves room for them.
+    allEdges.forEach((edge, index) => layoutGraph.setEdge(edge.source, edge.target, {}, `activity-${index}`));
     startNames.forEach((name, index) => layoutGraph.setEdge("__START__", name, {}, `start-${index}`));
     endNames.forEach((name, index) => layoutGraph.setEdge(name, "__END__", {}, `end-${index}`));
     dagre.layout(layoutGraph);
@@ -116,16 +119,15 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
     ];
     const maxCount = Math.max(1, ...edges.map((item) => item.count), ...Object.values(starts).map((v) => number(v) ?? 0), ...Object.values(ends).map((v) => number(v) ?? 0));
     const flowEdges: FlowEdge[] = [
-      ...edges.map((edge, index) => ({
+      ...allEdges.map((edge, index) => ({
         id: `transition-${index}-${edge.source}-${edge.target}`, source: edge.source, target: edge.target, type: "frequency",
-        markerEnd: { type: MarkerType.ArrowClosed, color: "#fda4af", width: 15, height: 15 },
-        style: { stroke: "#fb7185", strokeOpacity: .72, strokeWidth: 1.1 + Math.sqrt(Math.max(0, edge.count) / maxCount) * 3 },
-        data: { count: edge.count, probability: number(edge.transition_probability ?? edge.probability), reciprocal: edges.some((other) => other.source === edge.target && other.target === edge.source) },
+        markerEnd: { type: MarkerType.ArrowClosed, color: edge.source === edge.target ? "#fbbf24" : "#fda4af", width: 15, height: 15 },
+        style: { stroke: edge.source === edge.target ? "#fbbf24" : "#fb7185", strokeOpacity: .82, strokeWidth: 1.1 + Math.sqrt(Math.max(0, edge.count) / maxCount) * 3 },
+        data: { count: edge.count, probability: number(edge.transition_probability ?? edge.probability), selfLoop: edge.source === edge.target, reciprocal: edge.source !== edge.target && edges.some((other) => other.source === edge.target && other.target === edge.source) },
       })),
       ...Object.entries(starts).filter(([name]) => names.has(name)).map(([name, count], index) => ({ id: `start-edge-${index}`, source: "__START__", target: name, type: "frequency", markerEnd: { type: MarkerType.ArrowClosed, color: "#6ee7b7" }, style: { stroke: "#34d399", strokeOpacity: .8, strokeWidth: 1.2 + Math.sqrt((number(count) ?? 0) / maxCount) * 3 }, data: { count: number(count) ?? 0, probability: null } })),
       ...Object.entries(ends).filter(([name]) => names.has(name)).map(([name, count], index) => ({ id: `end-edge-${index}`, source: name, target: "__END__", type: "frequency", markerEnd: { type: MarkerType.ArrowClosed, color: "#fcd34d" }, style: { stroke: "#fbbf24", strokeOpacity: .8, strokeWidth: 1.2 + Math.sqrt((number(count) ?? 0) / maxCount) * 3 }, data: { count: number(count) ?? 0, probability: null } })),
-    ];
-    return { nodes, edges: flowEdges, activityCount: names.size };
+    ];    return { nodes, edges: flowEdges, activityCount: names.size };
   }, [dfg]);
   const [nodes, setNodes, onNodesChange] = useNodesState(built.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(built.edges);
