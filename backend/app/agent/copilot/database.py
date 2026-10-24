@@ -69,64 +69,6 @@ def _run_readonly_query(sql: str) -> list[dict[str, Any]]:
                 ]
 
 
-def _lookup_top_token_sellers(token_mint: str | None = None, limit: int = 5) -> list[dict[str, Any]]:
-    """Rank wallets by sell events, optionally scoped to a token mint."""
-    limit = max(1, min(int(limit), 50))
-    with get_connection() as conn:
-        with conn.transaction():
-            conn.execute("SET TRANSACTION READ ONLY")
-            conn.execute(f"SET LOCAL statement_timeout = '{SQL_TIMEOUT_MS}ms'")
-            with conn.cursor() as cur:
-                if token_mint:
-                    query = """
-                        SELECT wallet_address, COUNT(DISTINCT signature) AS sell_count,
-                               MIN(event_time) AS first_sell_time,
-                               MAX(event_time) AS last_sell_time
-                        FROM public.wallet_event_log
-                        WHERE LOWER(TRIM(translated_type)) = 'sell'
-                          AND mint = %s
-                        GROUP BY wallet_address
-                        ORDER BY sell_count DESC, wallet_address
-                        LIMIT %s
-                    """
-                    cur.execute(query, (token_mint, limit))
-                    columns = [column.name for column in (cur.description or [])]
-                    rows = cur.fetchall()
-                    if not rows:
-                        query = """
-                            SELECT wallet_address, COUNT(DISTINCT signature) AS sell_count,
-                                   MIN(event_time) AS first_sell_time,
-                                   MAX(event_time) AS last_sell_time
-                            FROM public.wallet_event_log
-                            WHERE LOWER(TRIM(translated_type)) = 'sell'
-                              AND (from_token = %s OR to_token = %s)
-                            GROUP BY wallet_address
-                            ORDER BY sell_count DESC, wallet_address
-                            LIMIT %s
-                        """
-                        cur.execute(query, (token_mint, token_mint, limit))
-                        columns = [column.name for column in (cur.description or [])]
-                        rows = cur.fetchall()
-                else:
-                    query = """
-                        SELECT wallet_address, COUNT(DISTINCT signature) AS sell_count,
-                               MIN(event_time) AS first_sell_time,
-                               MAX(event_time) AS last_sell_time
-                        FROM public.wallet_event_log
-                        WHERE LOWER(TRIM(translated_type)) = 'sell'
-                        GROUP BY wallet_address
-                        ORDER BY sell_count DESC, wallet_address
-                        LIMIT %s
-                    """
-                    cur.execute(query, (limit,))
-                    columns = [column.name for column in (cur.description or [])]
-                    rows = cur.fetchall()
-            return [
-                {column: _json_safe(value) for column, value in zip(columns, row)}
-                for row in rows
-            ]
-
-
 def _lookup_wallet_direct(wallet_address: str) -> dict[str, Any]:
     """Deterministically look up a specific wallet without LLM-generated SQL."""
     with get_connection() as conn:
