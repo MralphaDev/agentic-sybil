@@ -88,11 +88,6 @@ export default function InvestigationProgress({
   const processMiningChildren = stages.filter((stage) =>
     /^12_\d{2}_/.test(stage.step),
   );
-  const mainStages = stages.filter(
-    (stage) =>
-      !/^12_\d{2}_/.test(stage.step) &&
-      stage.step !== "12_run_process_mining",
-  );
   const activeStage = [...stages]
     .reverse()
     .find((stage) => stage.state === "running");
@@ -119,7 +114,7 @@ export default function InvestigationProgress({
   let processMiningGroupAdded = false;
 
   for (const stage of stages) {
-    if (/^12_\\d{2}_/.test(stage.step)) {
+    if (/^12_\d{2}_/.test(stage.step)) {
       if (!processMiningGroupAdded && !processMiningParent) {
         processMiningGroupAdded = true;
         content.push(
