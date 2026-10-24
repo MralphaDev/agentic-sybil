@@ -355,6 +355,10 @@ def run_process_mining(
         },
         "stochastic_dfg": stochastic_dfg_result,
         "filtered_dfg": filtered_dfg_result,
+        "action_counts": {
+            str(action): int(count)
+            for action, count in df["action"].value_counts().items()
+        },
         "first_activity_concentration": first_activity_result,
         "wallet_variants": variant_data["wallet_variants"],
         "variants": variant_data["variants"],
