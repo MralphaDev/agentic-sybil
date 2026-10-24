@@ -4,7 +4,7 @@ import "@xyflow/react/dist/style.css";
 import ELK from "elkjs/lib/elk.bundled.js";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ReactFlow, Background, Controls, MiniMap, Handle, Position, MarkerType, type Node, type Edge as FlowEdge, type NodeProps, type EdgeProps, BaseEdge, EdgeLabelRenderer, getBezierPath, useNodesState, useEdgesState } from "@xyflow/react";
+import { ReactFlow, Background, Controls, MiniMap, Handle, Position, MarkerType, type Node, type Edge as FlowEdge, type NodeProps, type EdgeProps, BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useNodesState, useEdgesState } from "@xyflow/react";
 import { ArrowLeft, GitBranch, Activity, Users, Repeat2, TrendingUp, Filter, Network, X } from "lucide-react";
 
 type AnyRecord = Record<string, unknown>;
@@ -32,24 +32,18 @@ function ActivityNode({ data }: NodeProps<Node<{ title: string; incoming: number
     <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
     <div className={`text-center text-xs font-semibold ${isSell ? "text-rose-200" : "text-slate-100"}`}>{data.title}</div>
     <div className="mt-1.5 text-center font-mono text-[10px] text-slate-400">{data.incoming.toLocaleString()} in · {data.outgoing.toLocaleString()} out</div>
+    {typeof (data as AnyRecord).rework === "number" && Number((data as AnyRecord).rework) > 0 && <div className="mt-2 rounded-md border border-amber-400/25 bg-amber-400/[.08] px-2 py-1 text-center text-[10px] font-medium text-amber-200">Rework time: {Number((data as AnyRecord).rework).toLocaleString()}</div>}
     <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
   </div>;
 }
-function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null; reciprocal?: boolean }>>) {
+function FrequencyEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null; reciprocal?: boolean }>>) {
   const isReciprocal = Boolean(data?.reciprocal);
-  const [smoothPath, smoothX, smoothY] = getBezierPath({ sourceX, sourceY, targetX, targetY, curvature: .34 });
-  let path = smoothPath, labelX = smoothX, labelY = smoothY;
-  if (isReciprocal) {
-    // Opposite directions take separate upper/lower arcs, never crossing at the center.
-    const dx = targetX - sourceX;
-    const dy = targetY - sourceY;
-    const offset = (sourceX < targetX ? -1 : 1) * (42 + Math.min(24, Math.sqrt(data?.count ?? 0) * .8));
-    const c1x = sourceX + dx * .34, c2x = sourceX + dx * .66;
-    const c1y = sourceY + dy * .34 + offset, c2y = sourceY + dy * .66 + offset;
-    path = `M ${sourceX},${sourceY} C ${c1x},${c1y} ${c2x},${c2y} ${targetX},${targetY}`;
-    labelX = (sourceX + targetX) / 2;
-    labelY = (sourceY + targetY) / 2 + offset;
-  }
+  // Orthogonal step routing keeps transitions in the lanes between activities,
+  // instead of using large Bezier arcs that sweep around the outside of the graph.
+  const [path, labelX, labelY] = getSmoothStepPath({
+    sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
+    borderRadius: 10, offset: isReciprocal ? 34 : 18,
+  });
   return <><BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...(isReciprocal ? { strokeWidth: Math.max(2, Number(style?.strokeWidth ?? 1.5)), strokeOpacity: .9 } : {}) }}/><EdgeLabelRenderer><div className={`nodrag nopan pointer-events-all absolute rounded-md border px-2 py-1 font-mono text-[10px] shadow ${isReciprocal ? "border-sky-300/40 bg-sky-950/95 text-sky-100" : "border-rose-400/20 bg-[#111116] text-rose-100"}`} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }} title={data?.probability == null ? "Transition frequency" : `Transition probability: ${(data.probability * 100).toFixed(1)}%`}>{(data?.count ?? 0).toLocaleString()}</div></EdgeLabelRenderer></>;
 }
 const elk = new ELK();
@@ -59,7 +53,9 @@ const edgeTypes = { frequency: FrequencyEdge };
 function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; description: string }) {
   const [selectedItem, setSelectedItem] = useState<{ kind: "activity" | "transition"; title: string; details: Record<string, string> } | null>(null);
   const built = useMemo(() => {
-    const edges = (dfg.edges ?? []).filter((edge) => edge && typeof edge.source === "string" && typeof edge.target === "string" && edge.source !== "__START__" && edge.target !== "__END__" && edge.source !== edge.target);
+    const allEdges = (dfg.edges ?? []).filter((edge) => edge && typeof edge.source === "string" && typeof edge.target === "string" && edge.source !== "__START__" && edge.target !== "__END__");
+    const selfLoopEdges = allEdges.filter((edge) => edge.source === edge.target);
+    const edges = allEdges.filter((edge) => edge.source !== edge.target);
     const starts = dfg.start_activities ?? {}, ends = dfg.end_activities ?? {};
     const names = new Set<string>();
     edges.forEach((edge) => { names.add(edge.source); names.add(edge.target); });
@@ -71,7 +67,10 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
     edges.forEach((edge) => {
       activityStats.get(edge.source)!.outgoing += edge.count;
       activityStats.get(edge.target)!.incoming += edge.count;
-      if (edge.source === edge.target) activityStats.get(edge.source)!.rework += edge.count;
+    });
+    selfLoopEdges.forEach((edge) => {
+      const stats = activityStats.get(edge.source);
+      if (stats) stats.rework += edge.count;
     });
     const startNames = Object.keys(starts).filter((name) => names.has(name));
     const endNames = Object.keys(ends).filter((name) => names.has(name));
@@ -180,7 +179,7 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
   return <section className="overflow-hidden rounded-2xl border border-white/[.09] bg-[#0b0c10]/95">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[.07] p-5"><div className="flex items-center gap-2"><Network size={16} className="text-red-300"/><div><h3 className="text-sm font-semibold">{title}</h3><p className="mt-1 text-xs text-zinc-600">{description}</p></div></div><div className="flex gap-3 text-[10px] text-zinc-500"><span>{built.activityCount} activities</span><span>{originalEdges.length} transitions</span><span>Click node/edge for evidence</span></div></div>
     <div className="relative h-[650px] bg-[radial-gradient(ellipse_at_50%_0%,rgba(127,29,29,.09),transparent_65%)]">
-      <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} fitView fitViewOptions={{ padding: .12, minZoom: .12, maxZoom: 1.1 }} minZoom={.12} maxZoom={2} onNodeClick={(_, node) => { const d = node.data as AnyRecord; setSelectedItem({ kind: "activity", title: String(d.title ?? node.id), details: { Activity: String(d.title ?? node.id), "Incoming frequency": String(d.incoming ?? 0), "Outgoing frequency": String(d.outgoing ?? 0), "Start count": String(d.start ?? 0), "End count": String(d.end ?? 0) } }); }} onEdgeClick={(_, edge) => { const d = record(edge.data); setSelectedItem({ kind: "transition", title: `${edge.source} → ${edge.target}`, details: { Source: edge.source, Target: edge.target, "Transition frequency": String(d.count ?? edge.label ?? "—"), "Transition probability": d.probability == null ? "Not available" : `${(Number(d.probability) * 100).toFixed(2)}%` } }); }} proOptions={{ hideAttribution: true }}>
+      <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} fitView fitViewOptions={{ padding: .12, minZoom: .12, maxZoom: 1.1 }} minZoom={.12} maxZoom={2} onNodeClick={(_, node) => { const d = node.data as AnyRecord; setSelectedItem({ kind: "activity", title: String(d.title ?? node.id), details: { Activity: String(d.title ?? node.id), "Incoming frequency": String(d.incoming ?? 0), "Outgoing frequency": String(d.outgoing ?? 0), "Start count": String(d.start ?? 0), "End count": String(d.end ?? 0), "Rework time": String(d.rework ?? 0) } }); }} onEdgeClick={(_, edge) => { const d = record(edge.data); setSelectedItem({ kind: "transition", title: `${edge.source} → ${edge.target}`, details: { Source: edge.source, Target: edge.target, "Transition frequency": String(d.count ?? edge.label ?? "—"), "Rework time": String(d.count ?? 0), "Transition probability": d.probability == null ? "Not available" : `${(Number(d.probability) * 100).toFixed(2)}%` } }); }} proOptions={{ hideAttribution: true }}>
         <Background color="#27212a" gap={24} size={1}/><Controls className="!overflow-hidden !rounded-lg !border !border-white/10 !bg-[#111116] [&>button]:!border-white/10 [&>button]:!bg-[#111116] [&>button]:!fill-zinc-300"/><MiniMap pannable zoomable nodeColor={(node) => String((node.data as AnyRecord).title ?? "").toLowerCase().includes("sell") ? "#fb7185" : "#64748b"} className="!border !border-white/10 !bg-[#0a0b10]"/>
       </ReactFlow>
       {selectedItem && <aside className="absolute right-3 top-3 z-10 w-[min(300px,calc(100%-24px))] rounded-xl border border-white/10 bg-[#0b0c10]/95 p-4 shadow-2xl backdrop-blur"><div className="flex items-start justify-between gap-3"><div><p className="text-[9px] tracking-[.2em] text-red-300">{selectedItem.kind === "activity" ? "ACTIVITY DETAILS" : "TRANSITION DETAILS"}</p><h4 className="mt-1 break-words text-sm font-semibold">{selectedItem.title}</h4></div><button onClick={() => setSelectedItem(null)} className="text-zinc-500 hover:text-white"><X size={15}/></button></div><div className="mt-4 space-y-2">{Object.entries(selectedItem.details).map(([key, value]) => <div key={key} className="flex justify-between gap-3 border-b border-white/[.06] pb-2"><span className="text-[10px] text-zinc-500">{key}</span><span className="max-w-[60%] break-all text-right font-mono text-[10px] text-zinc-200">{value}</span></div>)}</div></aside>}
