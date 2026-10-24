@@ -253,6 +253,7 @@ def execute_analysis(target_token_mint: str) -> dict:
             "13_build_analysis_context",
             AnalysisContext,
             target_token_mint=target_token_mint,
+            token_mint_date=token_mint_date,
             events=events,
             profile_wallets=profile_wallets,
             wallet_transfers=wallet_transfers,
