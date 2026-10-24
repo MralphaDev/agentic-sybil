@@ -134,7 +134,7 @@ export default function BubblemapPage() {
       const active = currentSelected === node.id;
       const degree = number(node.in_degree) + number(node.out_degree);
       const radius = Math.max(7, Math.min(21, 7 + Math.log2(degree + 1) * 2.4));
-      const kind = nodeKind({ ...node, ...(features[node.id] ?? {}) });
+      const kind = nodeKind(node);
       const palette = nodePalette[kind];
       const edgeColor = currentMode === "funding" && kind === "wallet" ? "#facc15" : palette.edge;
       if (active || (currentSearch && isMatch)) {
@@ -174,7 +174,10 @@ export default function BubblemapPage() {
     simRef.current?.stop();
     const width = hostRef.current.clientWidth || window.innerWidth;
     const height = hostRef.current.clientHeight || window.innerHeight;
-    const nodes: SimNode[] = sourceNodes.map((node) => ({ ...node, id: String(node.id ?? "") })).filter((node) => node.id);
+    const nodes: SimNode[] = sourceNodes.map((node) => {
+      const id = String(node.id ?? "");
+      return { ...node, ...(features[id] ?? {}), id };
+    }).filter((node) => node.id);
     const validIds = new Set(nodes.map((node) => node.id));
     const links: SimLink[] = sourceEdges.map((edge) => ({ source: String(edge.source ?? ""), target: String(edge.target ?? ""), count: number(edge.count) })).filter((edge) => validIds.has(edge.source as string) && validIds.has(edge.target as string));
     nodesRef.current = nodes; linksRef.current = links;
