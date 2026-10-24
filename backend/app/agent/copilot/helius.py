@@ -316,7 +316,7 @@ async def _helius_mcp_fallback(question: str, context_text: str, wallet_address_
                     # Some Helius MCP server versions wrap validation failures in a
                     # text content block while leaving the MCP-level isError flag false.
                     returned_validation_error = bool(
-                        re.search(r"MCP error -\\d+|Input validation error|Invalid arguments for tool", serialized, re.I)
+                        re.search(r"MCP error -\d+|Input validation error|Invalid arguments for tool", serialized, re.I)
                     )
                     if is_error or returned_validation_error:
                         detail = serialized[:5000]
