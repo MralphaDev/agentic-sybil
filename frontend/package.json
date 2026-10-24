@@ -16,7 +16,8 @@
     "react-dom": "19.3.0",
     "d3-force": "^3.0.0",
     "@xyflow/react": "^12.8.6",
-    "dagre": "^0.8.5"
+    "dagre": "^0.8.5",
+    "elkjs": "^0.11.0"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
