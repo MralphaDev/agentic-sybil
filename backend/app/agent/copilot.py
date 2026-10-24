@@ -188,9 +188,16 @@ async def _helius_mcp_fallback(question: str, context_text: str) -> tuple[str, s
     except ImportError:
         return None
 
+    # Windows requires cmd.exe to launch the npx.cmd shim; Unix can exec npx directly.
+    if os.name == "nt":
+        command = "cmd"
+        args = ["/c", "npx", "-y", "helius-mcp@latest"]
+    else:
+        command = "npx"
+        args = ["-y", "helius-mcp@latest"]
     params = StdioServerParameters(
-        command="npx",
-        args=["-y", "helius-mcp@latest"],
+        command=command,
+        args=args,
         env={**os.environ, "HELIUS_API_KEY": api_key},
     )
     try:
