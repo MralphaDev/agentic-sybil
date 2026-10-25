@@ -30,12 +30,10 @@ function ActivityNode({ id, data }: NodeProps<Node<{ title: string; incoming: nu
   </div>;
   return <div className={`relative min-w-[174px] rounded-xl border px-4 py-3 shadow-[0_8px_25px_rgba(0,0,0,.28)] ${isSell ? "border-rose-400/90 bg-gradient-to-br from-rose-950/95 to-[#101016]" : "border-slate-600/80 bg-gradient-to-br from-slate-800/95 to-[#101016]"}`}>
     <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
-    <Handle id="loop-target" type="target" position={Position.Right} style={{ top: "34%" }} className="!h-2 !w-2 !border-0 !bg-amber-300"/>
     <div className={`text-center text-xs font-semibold ${isSell ? "text-rose-200" : "text-slate-100"}`}>{data.title}</div>
     <div className="mt-1.5 text-center font-mono text-[10px] text-slate-400">{data.incoming.toLocaleString()} in · {data.outgoing.toLocaleString()} out</div>
     {typeof (data as AnyRecord).rework === "number" && Number((data as AnyRecord).rework) > 0 && <div className="mt-2 rounded-md border border-amber-400/25 bg-amber-400/[.08] px-2 py-1 text-center text-[10px] font-medium text-amber-200">Rework time: {Number((data as AnyRecord).rework).toLocaleString()}</div>}
     <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
-    <Handle id="loop-source" type="source" position={Position.Right} style={{ top: "66%" }} className="!h-2 !w-2 !border-0 !bg-amber-300"/>
   </div>;
 }
 function FrequencyEdge({ id, source, target, sourceX, sourceY, targetX, targetY, data, markerEnd, style }: EdgeProps<FlowEdge<{ count: number; probability: number | null; reciprocal?: boolean; selfLoop?: boolean }>>) {
@@ -129,8 +127,8 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
     ];
     const maxCount = Math.max(1, ...edges.map((item) => item.count), ...Object.values(starts).map((v) => number(v) ?? 0), ...Object.values(ends).map((v) => number(v) ?? 0));
     const flowEdges: FlowEdge[] = [
-      ...allEdges.map((edge, index) => ({
-        id: `transition-${index}-${edge.source}-${edge.target}`, source: edge.source, target: edge.target, ...(edge.source === edge.target ? { sourceHandle: "loop-source", targetHandle: "loop-target" } : {}), type: "frequency",
+      ...edges.map((edge, index) => ({
+        id: `transition-${index}-${edge.source}-${edge.target}`, source: edge.source, target: edge.target,  type: "frequency",
         markerEnd: { type: MarkerType.ArrowClosed, color: edge.source === edge.target ? "#fbbf24" : "#fda4af", width: 15, height: 15 },
         style: { stroke: edge.source === edge.target ? "#fbbf24" : "#fb7185", strokeOpacity: .82, strokeWidth: 1.1 + Math.sqrt(Math.max(0, edge.count) / maxCount) * 3 },
         data: { count: edge.count, probability: number(edge.transition_probability ?? edge.probability), selfLoop: edge.source === edge.target, reciprocal: edge.source !== edge.target && edges.some((other) => other.source === edge.target && other.target === edge.source) },
