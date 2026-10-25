@@ -20,9 +20,16 @@ async def upload_forensic_csv(
             token_address=token_address,
         )
 
-        # 2. Run Process Mining after ingestion completes
+        # Analyze only wallets represented by this upload, including wallets
+        # whose completed forensic history was reused during ingestion.
+        wallet_addresses = {
+            item["address"] for item in ingestion_result.get("data", [])
+        } | set(ingestion_result.get("skipped_addresses", []))
+
+        # 2. Run analysis after ingestion completes, scoped to this upload.
         analysis_result = execute_analysis(
             target_token_mint=token_address,
+            wallet_addresses=wallet_addresses,
         )
 
         # 3. Return both results
