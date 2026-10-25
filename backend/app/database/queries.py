@@ -235,8 +235,12 @@ def upsert_wallet_profile(
         conn.execute(sql, params)
 
 
-def get_wallet_events() -> list[dict]:
-    """Fetch all wallet events for Process Mining."""
+def get_wallet_events(wallet_addresses: set[str] | list[str]) -> list[dict]:
+    """Fetch events only for wallets in the current investigation."""
+
+    addresses = sorted({address for address in wallet_addresses if address})
+    if not addresses:
+        return []
 
     sql = """
         SELECT
@@ -257,21 +261,17 @@ def get_wallet_events() -> list[dict]:
             amount,
             mint
         FROM public.wallet_event_log
+        WHERE wallet_address = ANY(%s)
         ORDER BY event_time ASC NULLS LAST, signature ASC;
     """
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql)
+            cur.execute(sql, (addresses,))
             rows = cur.fetchall()
+            columns = [column.name for column in cur.description]  # type: ignore
+            return [dict(zip(columns, row)) for row in rows]
 
-            columns = [column.name for column in cur.description] # type: ignore
-
-            return [
-                dict(zip(columns, row))
-                for row in rows
-            ]
-            
 def get_wallet_events_enriched() -> list[dict]:
     """Wallet events joined with wallet_profiles for the wallet itself,
     the sender (from_user_address) and the receiver (to_user_address)."""

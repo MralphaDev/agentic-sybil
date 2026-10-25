@@ -64,11 +64,20 @@ async def run_pipeline(
             {"message": "Ingestion finished; analysis started"},
         )
 
+        # The current upload defines the investigation scope. Include completed
+        # wallets skipped by ingestion as well as wallets processed this run.
+        wallet_addresses = {
+            item["address"] for item in ingestion_result.get("data", [])
+        } | set(ingestion_result.get("skipped_addresses", []))
+        if not wallet_addresses:
+            raise ValueError("The current investigation contains no wallet addresses.")
+
         # asyncio.to_thread propagates the current ContextVar context, including
         # the event callback registered above, into the synchronous pipeline.
         analysis_result = await asyncio.to_thread(
             execute_analysis,
             target_token_mint=token_address,
+            wallet_addresses=wallet_addresses,
         )
 
         run.result = {"ingestion": ingestion_result, "analysis": analysis_result}
