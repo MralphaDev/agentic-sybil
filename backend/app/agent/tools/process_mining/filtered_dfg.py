@@ -118,7 +118,7 @@ def _discover_raw_dfg(context: AnalysisContext) -> dict[str, Any]:
 def build_filtered_dfg_tools(context: AnalysisContext):
     @tool
     def get_filtered_dfg(
-        min_edge_count: int = 5,
+        min_edge_count: int = 1,
         include_probabilities: bool = True,
     ) -> dict[str, Any]:
         """Analyze the filtered Directly-Follows Graph of wallet actions.
