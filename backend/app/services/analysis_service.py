@@ -11,10 +11,7 @@ from app.api.providers.helius.client import HeliusClient
 from app.agent.orchestrator import run_agent_investigation
 from app.agent.sse_manager import get_current_event_callback
 from app.database.features.write_feature import write_wallet_features
-from app.database.queries import (
-    get_wallet_events,
-    get_wallet_profile_addresses,
-)
+from app.database.queries import get_wallet_events
 from app.features.compute_wallet_feature import compute_wallet_features
 from app.features.normalize_wallet_features import normalize_wallet_features
 from app.process_mining.orchestrator import run_process_mining
@@ -160,19 +157,24 @@ def _get_token_mint_date(token_mint: str) -> str | None:
     return asyncio.run(fetch())
 
 
-def execute_analysis(target_token_mint: str) -> dict:
+def execute_analysis(
+    target_token_mint: str,
+    wallet_addresses: set[str] | list[str],
+) -> dict:
     total_start = time.perf_counter()
+    wallet_addresses = {address for address in wallet_addresses if address}
+    if not wallet_addresses:
+        raise ValueError("The current investigation contains no wallet addresses.")
 
     try:
         events = timed_step(
             "01_get_wallet_events",
             get_wallet_events,
+            wallet_addresses,
         )
 
-        profile_wallets = timed_step(
-            "02_get_wallet_profile_addresses",
-            get_wallet_profile_addresses,
-        )
+        # Keep graph/profile scope aligned with the uploaded investigation.
+        profile_wallets = wallet_addresses
 
         wallet_transfers = timed_step(
             "03_extract_wallet_transfers",
