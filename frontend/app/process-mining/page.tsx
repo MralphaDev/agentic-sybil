@@ -22,7 +22,7 @@ function Metric({ title, value, note, icon: Icon }: { title: string; value: stri
 }
 function Empty({ text }: { text: string }) { return <div className="rounded-xl border border-dashed border-white/10 px-4 py-8 text-center text-xs leading-5 text-zinc-600">{text}</div>; }
 
-function ActivityNode({ id, data }: NodeProps<Node<{ title: string; incoming: number; outgoing: number; start: number; end: number; special?: string }>>) {
+function ActivityNode({ id, data }: NodeProps<Node<{ title: string; incoming: number; outgoing: number; start: number; end: number; rework?: number; reworkProbability?: number | null; special?: string }>>) {
   const isSell = data.title.toLowerCase().includes("sell");
   if (data.special) return <div className={`flex h-[66px] w-[66px] items-center justify-center rounded-full border-2 shadow-[0_0_28px_rgba(248,113,113,.12)] ${data.special === "start" ? "border-emerald-300 bg-emerald-950/70 text-emerald-200" : "border-amber-300 bg-amber-950/70 text-amber-200"}`}>
     {data.special === "start" ? <span className="text-[10px] font-bold tracking-[.12em]">START</span> : <span className="text-[10px] font-bold tracking-[.12em]">END</span>}
@@ -32,7 +32,7 @@ function ActivityNode({ id, data }: NodeProps<Node<{ title: string; incoming: nu
     <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
     <div className={`text-center text-xs font-semibold ${isSell ? "text-rose-200" : "text-slate-100"}`}>{data.title}</div>
     <div className="mt-1.5 text-center font-mono text-[10px] text-slate-400">{data.incoming.toLocaleString()} in · {data.outgoing.toLocaleString()} out</div>
-    {typeof (data as AnyRecord).rework === "number" && Number((data as AnyRecord).rework) > 0 && <div className="mt-2 rounded-md border border-amber-400/25 bg-amber-400/[.08] px-2 py-1 text-center text-[10px] font-medium text-amber-200">Rework time: {Number((data as AnyRecord).rework).toLocaleString()}</div>}
+    {typeof data.rework === "number" && data.rework > 0 && <div className="mt-2 rounded-md border border-amber-400/25 bg-amber-400/[.08] px-2 py-1 text-center text-[10px] font-medium text-amber-200"><div>Self-loop: {data.rework.toLocaleString()}</div><div className="mt-0.5 text-[9px] text-amber-100/70">Transition probability: {data.reworkProbability == null ? "N/A" : `${(data.reworkProbability * 100).toFixed(1)}%`}</div></div>}
     <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-slate-300"/>
   </div>;
 }
@@ -79,15 +79,18 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
     Object.keys(starts).forEach((name) => names.add(name));
     Object.keys(ends).forEach((name) => names.add(name));
     if (!names.size) return { nodes: [] as Node[], edges: [] as FlowEdge[], activityCount: 0 };
-    const activityStats = new Map<string, { incoming: number; outgoing: number; rework: number }>();
-    names.forEach((name) => activityStats.set(name, { incoming: 0, outgoing: 0, rework: 0 }));
+    const activityStats = new Map<string, { incoming: number; outgoing: number; rework: number; reworkProbability: number | null }>();
+    names.forEach((name) => activityStats.set(name, { incoming: 0, outgoing: 0, rework: 0, reworkProbability: null }));
     edges.forEach((edge) => {
       activityStats.get(edge.source)!.outgoing += edge.count;
       activityStats.get(edge.target)!.incoming += edge.count;
     });
     selfLoopEdges.forEach((edge) => {
       const stats = activityStats.get(edge.source);
-      if (stats) stats.rework += edge.count;
+      if (stats) {
+        stats.rework += edge.count;
+        stats.reworkProbability = number(edge.transition_probability ?? edge.probability);
+      }
     });
     const startNames = Object.keys(starts).filter((name) => names.has(name));
     const endNames = Object.keys(ends).filter((name) => names.has(name));
@@ -129,7 +132,7 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
       { id: "__START__", type: "activity", position: positions.get("__START__")!, data: { title: "START", incoming: 0, outgoing: Object.values(starts).reduce((sum, n) => sum + (number(n) ?? 0), 0), start: 0, end: 0, special: "start" } },
       ...[...names].map((name) => {
         const stats = activityStats.get(name)!;
-        return { id: name, type: "activity", position: positions.get(name)!, data: { title: name, incoming: stats.incoming, outgoing: stats.outgoing, start: number(starts[name]) ?? 0, end: number(ends[name]) ?? 0, rework: stats.rework } };
+        return { id: name, type: "activity", position: positions.get(name)!, data: { title: name, incoming: stats.incoming, outgoing: stats.outgoing, start: number(starts[name]) ?? 0, end: number(ends[name]) ?? 0, rework: stats.rework, reworkProbability: stats.reworkProbability } };
       }),
       { id: "__END__", type: "activity", position: positions.get("__END__")!, data: { title: "END", incoming: Object.values(ends).reduce((sum, n) => sum + (number(n) ?? 0), 0), outgoing: 0, start: 0, end: 0, special: "end" } },
     ];
