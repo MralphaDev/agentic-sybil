@@ -102,7 +102,7 @@ def discover_dfg(df: pd.DataFrame) -> dict:
     filtered_dfg = {
         (source, target): count
         for (source, target), count in dfg.items()
-        if count >= 5
+        if count >= 1
         and source not in excluded_activities
         and target not in excluded_activities
     }
@@ -227,7 +227,7 @@ def discover_dfg(df: pd.DataFrame) -> dict:
         "filtering_statistics": {
             "original_edge_count": len(edges),
             "filtered_edge_count": len(filtered_json["edges"]),
-            "min_edge_count": 5,
+            "min_edge_count": 1,
             "excluded_activities": sorted(excluded_activities),
         },
     }
