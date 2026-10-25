@@ -61,11 +61,19 @@ const edgeTypes = { frequency: FrequencyEdge };
 
 function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; description: string }) {
   const [selectedItem, setSelectedItem] = useState<{ kind: "activity" | "transition"; title: string; details: Record<string, string> } | null>(null);
+  const [minEdgeCount, setMinEdgeCount] = useState(1);
+  const [hiddenActivities, setHiddenActivities] = useState<string[]>([]);
+  const availableActivities = useMemo(() => [...new Set([
+    ...(dfg.edges ?? []).flatMap((edge) => [edge.source, edge.target]),
+    ...Object.keys(dfg.start_activities ?? {}),
+    ...Object.keys(dfg.end_activities ?? {}),
+  ].filter((name) => name && name !== "__START__" && name !== "__END__"))].sort((a, b) => a.localeCompare(b)), [dfg]);
   const built = useMemo(() => {
-    const allEdges = (dfg.edges ?? []).filter((edge) => edge && typeof edge.source === "string" && typeof edge.target === "string" && edge.source !== "__START__" && edge.target !== "__END__");
+    const allEdges = (dfg.edges ?? []).filter((edge) => edge && typeof edge.source === "string" && typeof edge.target === "string" && edge.source !== "__START__" && edge.target !== "__END__" && edge.count >= minEdgeCount && !hiddenActivities.includes(edge.source) && !hiddenActivities.includes(edge.target));
     const selfLoopEdges = allEdges.filter((edge) => edge.source === edge.target);
     const edges = allEdges.filter((edge) => edge.source !== edge.target);
-    const starts = dfg.start_activities ?? {}, ends = dfg.end_activities ?? {};
+    const starts = Object.fromEntries(Object.entries(dfg.start_activities ?? {}).filter(([name]) => !hiddenActivities.includes(name)));
+    const ends = Object.fromEntries(Object.entries(dfg.end_activities ?? {}).filter(([name]) => !hiddenActivities.includes(name)));
     const names = new Set<string>();
     edges.forEach((edge) => { names.add(edge.source); names.add(edge.target); });
     Object.keys(starts).forEach((name) => names.add(name));
@@ -136,7 +144,7 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
       ...Object.entries(starts).filter(([name]) => names.has(name)).map(([name, count], index) => ({ id: `start-edge-${index}`, source: "__START__", target: name, type: "frequency", markerEnd: { type: MarkerType.ArrowClosed, color: "#6ee7b7" }, style: { stroke: "#34d399", strokeOpacity: .8, strokeWidth: 1.2 + Math.sqrt((number(count) ?? 0) / maxCount) * 3 }, data: { count: number(count) ?? 0, probability: null } })),
       ...Object.entries(ends).filter(([name]) => names.has(name)).map(([name, count], index) => ({ id: `end-edge-${index}`, source: name, target: "__END__", type: "frequency", markerEnd: { type: MarkerType.ArrowClosed, color: "#fcd34d" }, style: { stroke: "#fbbf24", strokeOpacity: .8, strokeWidth: 1.2 + Math.sqrt((number(count) ?? 0) / maxCount) * 3 }, data: { count: number(count) ?? 0, probability: null } })),
     ];    return { nodes, edges: flowEdges, activityCount: names.size };
-  }, [dfg]);
+  }, [dfg, minEdgeCount, hiddenActivities]);
   const [nodes, setNodes, onNodesChange] = useNodesState(built.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(built.edges);
   useEffect(() => {
@@ -147,7 +155,18 @@ function DfgDiagram({ dfg, title, description }: { dfg: Dfg; title: string; desc
   const originalEdges = dfg.edges ?? [];
   if (!originalEdges.length) return <section className="rounded-2xl border border-white/[.09] bg-[#0b0c10]/90 p-5"><h3 className="text-sm font-semibold">{title}</h3><p className="mt-1 text-xs text-zinc-600">{description}</p><div className="mt-5"><Empty text="No transitions remain in this DFG. Check event mapping and the frequency filter."/></div></section>;
   return <section className="overflow-hidden rounded-2xl border border-white/[.09] bg-[#0b0c10]/95">
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[.07] p-5"><div className="flex items-center gap-2"><Network size={16} className="text-red-300"/><div><h3 className="text-sm font-semibold">{title}</h3><p className="mt-1 text-xs text-zinc-600">{description}</p></div></div><div className="flex gap-3 text-[10px] text-zinc-500"><span>{built.activityCount} activities</span><span>{originalEdges.length} transitions</span><span>Click node/edge for evidence</span></div></div>
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[.07] p-5"><div className="flex items-center gap-2"><Network size={16} className="text-red-300"/><div><h3 className="text-sm font-semibold">{title}</h3><p className="mt-1 text-xs text-zinc-600">{description}</p></div></div><div className="flex gap-3 text-[10px] text-zinc-500"><span>{built.activityCount} visible activities</span><span>{built.edges.length} visible transitions</span><span>Click node/edge for evidence</span></div></div>
+    <div className="grid gap-3 border-b border-white/[.06] p-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="rounded-lg border border-white/[.08] bg-black/20 p-3">
+        <label htmlFor={`min-edge-count-${title.replaceAll(" ", "-")}`} className="flex items-center justify-between gap-2 text-xs text-zinc-300"><span>Minimum edge frequency</span><span className="font-mono text-rose-200">{minEdgeCount}</span></label>
+        <input id={`min-edge-count-${title.replaceAll(" ", "-")}`} type="range" min={1} max={Math.max(1, ...originalEdges.map((edge) => edge.count))} value={Math.min(minEdgeCount, Math.max(1, ...originalEdges.map((edge) => edge.count)))} onChange={(event) => setMinEdgeCount(Number(event.target.value))} className="mt-3 w-full accent-rose-400"/>
+        <div className="mt-2 flex items-center gap-2"><input aria-label="Minimum edge frequency value" type="number" min={1} max={Math.max(1, ...originalEdges.map((edge) => edge.count))} value={minEdgeCount} onChange={(event) => setMinEdgeCount(Math.max(1, Math.min(Math.max(1, ...originalEdges.map((edge) => edge.count)), Number(event.target.value) || 1)))} className="w-20 rounded-md border border-white/10 bg-black/30 px-2 py-1.5 text-xs text-white outline-none focus:border-rose-400/60"/><button onClick={() => setMinEdgeCount(1)} className="rounded-md border border-white/10 px-2 py-1.5 text-[10px] text-zinc-400 hover:text-white">Reset</button><span className="text-[10px] text-zinc-600">of {originalEdges.length} edges</span></div>
+      </div>
+      <div className="rounded-lg border border-white/[.08] bg-black/20 p-3">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-zinc-300">Visible activities <span className="text-zinc-600">({availableActivities.length - hiddenActivities.length}/{availableActivities.length})</span></p><div className="flex gap-2"><button onClick={() => setHiddenActivities([])} className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-zinc-400 hover:text-white">Select all</button><button onClick={() => setHiddenActivities(availableActivities)} className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-zinc-400 hover:text-white">Clear all</button></div></div>
+        <div className="flex max-h-28 flex-wrap gap-2 overflow-y-auto pr-1">{availableActivities.map((activity) => <label key={activity} className="flex cursor-pointer items-center gap-1.5 rounded-md border border-white/[.07] bg-white/[.02] px-2 py-1.5 text-[10px] text-zinc-300 hover:border-rose-400/30"><input type="checkbox" checked={!hiddenActivities.includes(activity)} onChange={(event) => setHiddenActivities((current) => event.target.checked ? current.filter((name) => name !== activity) : [...current, activity])} className="accent-rose-400"/><span>{activity}</span></label>)}</div>
+      </div>
+    </div>
     <div className="relative h-[650px] bg-[radial-gradient(ellipse_at_50%_0%,rgba(127,29,29,.09),transparent_65%)]">
       <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} fitView fitViewOptions={{ padding: .12, minZoom: .12, maxZoom: 1.1 }} minZoom={.12} maxZoom={2} onNodeClick={(_, node) => { const d = node.data as AnyRecord; setSelectedItem({ kind: "activity", title: String(d.title ?? node.id), details: { Activity: String(d.title ?? node.id), "Incoming frequency": String(d.incoming ?? 0), "Outgoing frequency": String(d.outgoing ?? 0), "Start count": String(d.start ?? 0), "End count": String(d.end ?? 0), "Rework time": String(d.rework ?? 0) } }); }} onEdgeClick={(_, edge) => { const d = record(edge.data); setSelectedItem({ kind: "transition", title: `${edge.source} → ${edge.target}`, details: { Source: edge.source, Target: edge.target, "Transition frequency": String(d.count ?? edge.label ?? "—"), "Transition probability": d.probability == null ? "Not available" : `${(Number(d.probability) * 100).toFixed(2)}%` } }); }} proOptions={{ hideAttribution: true }}>
         <Background color="#27212a" gap={24} size={1}/><Controls className="!overflow-hidden !rounded-lg !border !border-white/10 !bg-[#111116] [&>button]:!border-white/10 [&>button]:!bg-[#111116] [&>button]:!fill-zinc-300"/><MiniMap pannable zoomable nodeColor={(node) => String((node.data as AnyRecord).title ?? "").toLowerCase().includes("sell") ? "#fb7185" : "#64748b"} className="!border !border-white/10 !bg-[#0a0b10]"/>
