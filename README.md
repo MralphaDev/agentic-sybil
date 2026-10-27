@@ -1,4 +1,4 @@
-# Agentic Sybil
+# Sybiltrace 
 
 An investigation platform for exploring coordinated and Sybil-like activity on Solana. It combines wallet/event ingestion, graph and process-mining analysis, an agentic investigation workflow, and a Next.js frontend.
 
